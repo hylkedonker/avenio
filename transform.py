@@ -1,4 +1,4 @@
-from typing import Iterable, Tuple
+from typing import Callable, Iterable, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -27,6 +27,70 @@ def dummy_encode_mutations(
         dummy_data_frame.loc[patient_id][gene] += len(patient_genes)
 
     return dummy_data_frame
+
+
+def patient_allele_frequencies(
+    data_frame: pd.DataFrame,
+    gene_vocabulary: Iterable,
+    transformation: Callable = lambda x, y: y - x,
+    allele_freq_columns: List[str] = [
+        "T0: Allele \nFraction",
+        "T1: Allele Fraction",
+    ],
+) -> pd.DataFrame:
+    """
+    For each patient, calculate allele frequency increase (by default) of
+    mutations.
+
+    For each mutation for a given patient, calculate `transformation(f_t0,
+    f_t1)` from the allele frequencies measured as t0 and t1.
+    """
+    # The transformation is calculated between two columns (t0 and t1).
+    if len(allele_freq_columns) != 2:
+        raise ValueError("Allele frequency columns must be precisely two!")
+
+    # The columns that were passed must actually exist.
+    column_names = data_frame.columns
+    if (
+        allele_freq_columns[0] not in column_names
+        or allele_freq_columns[1] not in column_names
+    ):
+        raise KeyError(
+            "Column lookup error in `allel_freq_columns` = {}.".format(
+                allele_freq_columns
+            )
+        )
+
+    # There may not be any NA values in the columns.
+    if (
+        sum(data_frame[allele_freq_columns[0]].isna()) > 0
+        or sum(data_frame[allele_freq_columns[1]].isna()) > 0
+    ):
+        raise ValueError("NA values found in allele frequency columns!")
+
+    # Create an empty data frame first.
+    patient_data_frame = pd.DataFrame(
+        0.0,
+        # Rows are patients
+        index=data_frame["Patient ID"].unique(),
+        # Columns are the calculated allele frequency differences (unless
+        # specified otherwise with `transformation`) per gene mutation.
+        columns=gene_vocabulary,
+    )
+
+    # Go through all the mutations.
+    for index, row in data_frame.iterrows():
+        patient_id = row["Patient ID"]
+        gene = row["Gene"]
+        # Extract allele frequencies at time t0 and t1.
+        f_t0, f_t1 = row[allele_freq_columns]
+
+        # Carry out the transformation on the two allele frequencies (by default
+        # difference), and store result in the corresponding gene column for the
+        # given patient.
+        patient_data_frame.loc[patient_id, gene] = transformation(f_t0, f_t1)
+
+    return patient_data_frame
 
 
 def mutation_train_test_split(
