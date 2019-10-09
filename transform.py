@@ -1,4 +1,4 @@
-from typing import Callable, Iterable, List, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -112,3 +112,47 @@ def mutation_train_test_split(
     test_data_frame = mutation_data_frame[~train_rows]
 
     return (train_data_frame, test_data_frame)
+
+
+def get_top_correlated(
+    correlation_data_frame: pd.DataFrame,
+    ascending: bool = True,
+    top_count: int = 20,
+    gene_counts: Optional = None,
+) -> pd.DataFrame:
+    """
+    """
+    # Get the maximal cell by:
+    # 1) flatting array.
+    corr_flat = correlation_data_frame.values.flatten()
+
+    # 2) Truncating up to `top_count` values.
+    if not ascending:
+        top_indices = np.argsort(corr_flat)[-top_count:]
+    else:
+        top_indices = np.argsort(corr_flat)[:top_count]
+
+    # 3) Calculating indices back to original dataframe.
+    i, j = np.unravel_index(top_indices, correlation_data_frame.shape)
+
+    # Finally store results in data frame.
+    columns = {
+        "gene 1": correlation_data_frame.index[i],
+        "gene 2": correlation_data_frame.index[j],
+        "correlation": corr_flat[top_indices],
+    }
+    df = pd.DataFrame(columns)
+
+    # Add columns with gene counts if passed.
+    if gene_counts is not None:
+        df["# gene 1"] = gene_counts[correlation_data_frame.index[i]].values
+        df["# gene 2"] = gene_counts[correlation_data_frame.index[j]].values
+
+    # Remove diagonal elements (i, i).
+    diagonal_genes = df["gene 1"] == df["gene 2"]
+    df = df[~diagonal_genes]
+    # Remove permutations (i, j) ~ (j, i).
+    even_indices = df.index % 2 == 0
+    df = df[even_indices]
+
+    return df.sort_values([df.columns[2]], ascending=ascending)
