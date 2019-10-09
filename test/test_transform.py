@@ -128,5 +128,9 @@ class TestTransforms(unittest.TestCase):
             correlations,
             gene_counts=self.mutations["Gene"].value_counts(),
             ascending=True,
+            top_count=2,
         )
         self.assertEqual(bottom_df.iloc[0]["correlation"], min_c)
+
+        # 5) Check that DataFrame is correctly truncated.
+        self.assertEqual(bottom_df.shape[0], 2)

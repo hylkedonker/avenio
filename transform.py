@@ -116,21 +116,22 @@ def mutation_train_test_split(
 
 def get_top_correlated(
     correlation_data_frame: pd.DataFrame,
-    ascending: bool = True,
-    top_count: int = 20,
+    ascending: bool = False,
+    top_count: int = 15,
     gene_counts: Optional = None,
 ) -> pd.DataFrame:
     """
+    Get the top correlated genes in ascending (descending) order.
     """
     # Get the maximal cell by:
     # 1) flatting array.
     corr_flat = correlation_data_frame.values.flatten()
 
-    # 2) Truncating up to `top_count` values.
+    # 2) and sorting indices.
     if not ascending:
-        top_indices = np.argsort(corr_flat)[-top_count:]
+        top_indices = np.argsort(corr_flat)
     else:
-        top_indices = np.argsort(corr_flat)[:top_count]
+        top_indices = np.argsort(corr_flat)
 
     # 3) Calculating indices back to original dataframe.
     i, j = np.unravel_index(top_indices, correlation_data_frame.shape)
@@ -155,4 +156,5 @@ def get_top_correlated(
     even_indices = df.index % 2 == 0
     df = df[even_indices]
 
-    return df.sort_values([df.columns[2]], ascending=ascending)
+    # Sort and truncate size.
+    return df.sort_values([df.columns[2]], ascending=ascending).iloc[:top_count]
