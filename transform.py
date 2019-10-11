@@ -113,28 +113,6 @@ def patient_allele_frequencies(
         f = transformation(f_t0, f_t1)
         patient_data_frame.loc[patient_id, gene] = select_from_duplicates(f)
 
-    # # Go through all the mutations.
-    # for index, row in data_frame.iterrows():
-    #     patient_id = row["Patient ID"]
-    #     gene = row["Gene"]
-
-    #     patient_gene_pair = (data_frame["Patient ID"] == patient_id) & (
-    #         data_frame["Gene"] == gene
-    #     )
-    #     if len(data_frame[patient_gene_pair]) > 1:
-    #         print(
-    #             "WARNING: No correction applied for patient with multiple "
-    #             "mutations in same gene."
-    #         )
-
-    #     # Extract allele frequencies at time t0 and t1.
-    #     f_t0, f_t1 = row[allele_freq_columns]
-
-    #     # Carry out the transformation on the two allele frequencies (by default
-    #     # difference), and store result in the corresponding gene column for the
-    #     # given patient.
-    #     patient_data_frame.loc[patient_id, gene] = transformation(f_t0, f_t1)
-
     return patient_data_frame
 
 
