@@ -17,24 +17,27 @@ class TestTransforms(unittest.TestCase):
         Generate Avenio test data.
         """
         # Patient ids:
-        patients = [1, 1, 2, 3, 3]
+        patients = [1, 1, 2, 3, 3, 3, 3]
 
         # Allele frequencies and corresponding column names.
         F_allele = [
             # Patient 1.
-            [0.1, 0.2],
-            [0.3, 0.5],
+            [0.1, 0.2],  # a
+            [0.3, 0.5],  # b
             # Patient 2.
-            [0.6, 0.4],
+            [0.6, 0.4],  # c
             # Patient 3.
-            [0.1, 0.05],
-            [0.5, 1.0],
+            [0.1, 0.05],  # a
+            [0.5, 1.0],  # b
+            # Duplicate mutations of gene "a" in patient 3.
+            [0.01, 0.5],  # a
+            [0.5, 0.01],  # a
         ]
         allele_columns = ["T0: Allele \nFraction", "T1: Allele Fraction"]
         self.mutations = pd.DataFrame(F_allele, columns=allele_columns)
 
         # Names of mutations.
-        self.mutations["Gene"] = ["a", "b", "c", "a", "b"]
+        self.mutations["Gene"] = ["a", "b", "c", "a", "b", "a", "a"]
         self.mutations["Patient ID"] = patients
 
         # Vocabulary of genes, which we now simply take to be all the genes in
@@ -42,11 +45,11 @@ class TestTransforms(unittest.TestCase):
         # genes).
         self.all_genes = self.mutations["Gene"].unique()
 
-    def test_patient_allele_frequencies(self):
+    def test_patient_allele_frequencies_errors(self):
         """
-        Validate correct of `patient_allele_frequencies` function.
+        Test error handling of `patient_allele_frequencies` function.
         """
-        # Two many columns passed to `allele_freq_columns`.
+        # Too many columns passed to `allele_freq_columns`.
         with self.assertRaises(ValueError):
             patient_allele_frequencies(
                 self.mutations,
@@ -70,6 +73,11 @@ class TestTransforms(unittest.TestCase):
                 mutation_copy, gene_vocabulary=self.all_genes
             )
 
+    def test_patient_allele_frequencies_values(self):
+        """
+        Check that `patient_allele_frequencies` stores the correct values in the
+        correct column.
+        """
         df_freq = patient_allele_frequencies(self.mutations, self.all_genes)
 
         reference_mutation_names = ["a", "b", "c"]
@@ -85,6 +93,29 @@ class TestTransforms(unittest.TestCase):
             pd.Series([0.0, 0.0, -0.2], index=reference_mutation_names),
             check_names=False,
         )
+
+    def test_patient_allele_frequencies_duplicates(self):
+        """
+        Check if duplicates are correctly handled by
+        `patient_allele_frequencies`.
+        """
+        # Check that first element is selected when handle_duplicates="ignore".
+        df_freq = patient_allele_frequencies(
+            self.mutations, self.all_genes, handle_duplicates="ignore"
+        )
+        self.assertEqual(df_freq.loc[3, "a"], -0.05)
+
+        # Check that largest value is selected when handle_duplicates="max".
+        df_freq = patient_allele_frequencies(
+            self.mutations, self.all_genes, handle_duplicates="max"
+        )
+        self.assertEqual(df_freq.loc[3, "a"], 0.49)
+
+        # Check that smallest value is selected when handle_duplicates="min".
+        df_freq = patient_allele_frequencies(
+            self.mutations, self.all_genes, handle_duplicates="min"
+        )
+        self.assertEqual(df_freq.loc[3, "a"], -0.49)
 
     def test_top_correlated(self):
         """
@@ -113,8 +144,11 @@ class TestTransforms(unittest.TestCase):
         a_mutation = top_df["gene 1"] == "a"
         c_mutation = top_df["gene 2"] == "c"
         # Mutation c occurs 1 time, mutation a occurs 2 times.
+
+        # A single "c" mutation.
         self.assertTrue(np.all(top_df[c_mutation]["# gene 2"] == 1))
-        self.assertTrue(np.all(top_df[a_mutation]["# gene 1"] == 2))
+        # Four "a" mutations.
+        self.assertTrue(np.all(top_df[a_mutation]["# gene 1"] == 4))
 
         # 4) Check descending and ascending order.
         # First element is largest value.
