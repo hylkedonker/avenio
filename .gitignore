@@ -1,0 +1,5 @@
+*.xlsx
+*.sav
+*__pycache__*
+.vscode
+.ipynb_checkpoints
