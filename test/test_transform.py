@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 from pandas.testing import assert_series_equal
+from scipy.stats import pearsonr
 
 from transform import get_top_correlated, patient_allele_frequencies
 
@@ -168,3 +169,18 @@ class TestTransforms(unittest.TestCase):
 
         # 5) Check that DataFrame is correctly truncated.
         self.assertEqual(bottom_df.shape[0], 2)
+
+        # 6) Generate top list with p-values. Check that p-values are correctly
+        #    aligned.
+
+        # Function to generate matrix with p values.
+        def pearson_pval(x, y):
+            return pearsonr(x, y)[1]
+
+        pval_corr = df_freq.corr(method=pearson_pval).fillna(0)
+
+        # Generate top list with p-values.
+        top_df = get_top_correlated(correlations, pval_corr)
+        gene_1, gene_2, p = top_df.loc[0, ["gene 1", "gene 2", "p-value"]]
+        # Check that alignment is correct.
+        self.assertEqual(pval_corr.loc[gene_1, gene_2], p)

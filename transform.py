@@ -37,7 +37,7 @@ def patient_allele_frequencies(
         "T0: Allele \nFraction",
         "T1: Allele Fraction",
     ],
-    handle_duplicates="min",
+    handle_duplicates="sum",
 ) -> pd.DataFrame:
     """
     For each patient, calculate allele frequency increase (by default) of
@@ -46,8 +46,8 @@ def patient_allele_frequencies(
     For each mutation for a given patient, calculate `transformation(f_t0,
     f_t1)` from the allele frequencies measured as t0 and t1.
     """
-    allowed_duplicate_actions = ("min", "max", "ignore", "concat")
-    if handle_duplicates.lower() not in ("min", "max", "ignore", "concat"):
+    allowed_duplicate_actions = ("min", "max", "ignore", "concat", "sum")
+    if handle_duplicates.lower() not in allowed_duplicate_actions:
         raise ValueError(
             "Allowed values for handle_duplicates are {}.".format(
                 allowed_duplicate_actions
@@ -96,6 +96,8 @@ def patient_allele_frequencies(
         select_from_duplicates = np.min
     elif handle_duplicates == "max":
         select_from_duplicates = np.max
+    elif handle_duplicates == "sum":
+        select_from_duplicates = np.sum
 
     # Go through all the mutations.
     for group_index, grouped in data_frame.groupby(["Patient ID", "Gene"]):
@@ -138,7 +140,8 @@ def mutation_train_test_split(
 
 
 def get_top_correlated(
-    correlation_data_frame: pd.DataFrame,
+    correlations: pd.DataFrame,
+    correlation_pvalue: Optional[pd.DataFrame] = None,
     ascending: bool = False,
     top_count: int = 15,
     gene_counts: Optional = None,
@@ -148,7 +151,7 @@ def get_top_correlated(
     """
     # Get the maximal cell by:
     # 1) flatting array.
-    corr_flat = correlation_data_frame.values.flatten()
+    corr_flat = correlations.values.flatten()
 
     # 2) and sorting indices.
     if not ascending:
@@ -157,20 +160,25 @@ def get_top_correlated(
         top_indices = np.argsort(corr_flat)
 
     # 3) Calculating indices back to original dataframe.
-    i, j = np.unravel_index(top_indices, correlation_data_frame.shape)
+    i, j = np.unravel_index(top_indices, correlations.shape)
 
     # Finally store results in data frame.
     columns = {
-        "gene 1": correlation_data_frame.index[i],
-        "gene 2": correlation_data_frame.index[j],
+        "gene 1": correlations.index[i],
+        "gene 2": correlations.index[j],
         "correlation": corr_flat[top_indices],
     }
+
+    if correlation_pvalue is not None:
+        pval_flat = correlation_pvalue.values.flatten()
+        columns["p-value"] = pval_flat[top_indices]
+
     df = pd.DataFrame(columns)
 
     # Add columns with gene counts if passed.
     if gene_counts is not None:
-        df["# gene 1"] = gene_counts[correlation_data_frame.index[i]].values
-        df["# gene 2"] = gene_counts[correlation_data_frame.index[j]].values
+        df["# gene 1"] = gene_counts[correlations.index[i]].values
+        df["# gene 2"] = gene_counts[correlations.index[j]].values
 
     # Remove diagonal elements (i, i).
     diagonal_genes = df["gene 1"] == df["gene 2"]
