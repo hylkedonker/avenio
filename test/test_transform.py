@@ -4,8 +4,13 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_series_equal
 from scipy.stats import pearsonr
+from sklearn.tree import DecisionTreeClassifier
 
-from transform import get_top_correlated, patient_allele_frequencies
+from transform import (
+    ClassifierAsTransformer,
+    get_top_correlated,
+    patient_allele_frequencies,
+)
 
 
 class TestTransforms(unittest.TestCase):
@@ -55,7 +60,7 @@ class TestTransforms(unittest.TestCase):
             patient_allele_frequencies(
                 self.mutations,
                 gene_vocabulary=self.all_genes,
-                allele_freq_columns=["a", "b", "c"],
+                allele_columns=["a", "b", "c"],
             )
 
         # Fail when passing non-existing colums.
@@ -63,7 +68,7 @@ class TestTransforms(unittest.TestCase):
             patient_allele_frequencies(
                 self.mutations,
                 gene_vocabulary=self.all_genes,
-                allele_freq_columns=["lorem", "ipsum"],
+                allele_columns=["lorem", "ipsum"],
             )
 
         # Fail when some of the columns contain NA values.
@@ -184,3 +189,26 @@ class TestTransforms(unittest.TestCase):
         gene_1, gene_2, p = top_df.loc[0, ["gene 1", "gene 2", "p-value"]]
         # Check that alignment is correct.
         self.assertEqual(pval_corr.loc[gene_1, gene_2], p)
+
+
+class TestClassifierAsTransformer(unittest.TestCase):
+    def setUp(self):
+        """
+        Initialise environment for testing.
+        """
+        self.seed = 1234
+        np.random.seed(self.seed)
+
+    def test_pipelines(self):
+        """
+        Verify that the transformer wrapper classifier works as expected.
+        """
+        X = np.random.random([10, 2])
+        y = ["PD", "SD", "PR", "PD", "PR", "SD", "CR", "PD", "PR", "SD"]
+        tree = DecisionTreeClassifier(random_state=self.seed).fit(X, y)
+        tree_transformer = ClassifierAsTransformer(
+            classifier=DecisionTreeClassifier(random_state=self.seed), encoder=None
+        ).fit(X, y)
+        np.testing.assert_array_equal(
+            tree.predict(X), tree_transformer.transform(X)
+        )

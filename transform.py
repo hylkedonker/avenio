@@ -2,6 +2,8 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import OrdinalEncoder
 
 
 def dummy_encode_mutations(
@@ -33,10 +35,7 @@ def patient_allele_frequencies(
     data_frame: pd.DataFrame,
     gene_vocabulary: Iterable,
     transformation: Callable = lambda x, y: y - x,
-    allele_freq_columns: List[str] = [
-        "T0: Allele \nFraction",
-        "T1: Allele Fraction",
-    ],
+    allele_columns: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
     handle_duplicates="sum",
 ) -> pd.DataFrame:
     """
@@ -55,25 +54,25 @@ def patient_allele_frequencies(
         )
 
     # The transformation is calculated between two columns (t0 and t1).
-    if len(allele_freq_columns) != 2:
+    if len(allele_columns) != 2:
         raise ValueError("Allele frequency columns must be precisely two!")
 
     # The columns that were passed must actually exist.
     column_names = data_frame.columns
     if (
-        allele_freq_columns[0] not in column_names
-        or allele_freq_columns[1] not in column_names
+        allele_columns[0] not in column_names
+        or allele_columns[1] not in column_names
     ):
         raise KeyError(
             "Column lookup error in `allel_freq_columns` = {}.".format(
-                allele_freq_columns
+                allele_columns
             )
         )
 
     # There may not be any NA values in the columns.
     if (
-        sum(data_frame[allele_freq_columns[0]].isna()) > 0
-        or sum(data_frame[allele_freq_columns[1]].isna()) > 0
+        sum(data_frame[allele_columns[0]].isna()) > 0
+        or sum(data_frame[allele_columns[1]].isna()) > 0
     ):
         raise ValueError("NA values found in allele frequency columns!")
 
@@ -104,10 +103,7 @@ def patient_allele_frequencies(
         patient_id, gene = group_index
 
         # Extract allele frequencies at time t0 and t1.
-        f_t0, f_t1 = (
-            grouped[allele_freq_columns[0]],
-            grouped[allele_freq_columns[1]],
-        )
+        f_t0, f_t1 = (grouped[allele_columns[0]], grouped[allele_columns[1]])
 
         # Carry out the transformation on the two allele frequencies (by default
         # difference), and store result in the corresponding gene column for the
@@ -189,3 +185,72 @@ def get_top_correlated(
 
     # Sort and truncate size.
     return df.sort_values([df.columns[2]], ascending=ascending).iloc[:top_count]
+
+
+def clean_mutation_columns(
+    input_data: pd.DataFrame,
+    columns_to_number=(
+        "T0: Allele \nFraction",
+        "T1: Allele Fraction",
+        "T0: No. Mutant \nMolecules per mL",
+        "T1: No. Mutant \nMolecules per mL",
+    ),
+) -> pd.DataFrame:
+    """
+    Convert mutation data to floats and drop missing values.
+    """
+    clean_data = input_data.copy()
+    # 1) Convert to float.
+    for column_name in columns_to_number:
+        clean_data.loc[:, column_name] = pd.to_numeric(
+            input_data[column_name], errors="coerce"
+        )
+
+    # 2) Drop rows for which the columns can not be converted.
+    return clean_data.dropna(subset=columns_to_number)
+
+
+class ClassifierAsTransformer(BaseEstimator, TransformerMixin):
+    """
+    Wrap transformer around classifier.
+    """
+
+    def __init__(self, classifier, encoder: Optional = OrdinalEncoder()):
+        self.classifier = classifier
+        self.encoder = encoder
+
+    def _to_matrix(self, y):
+        """
+        Represent vector as matrix.
+        """
+        if hasattr(y, "shape"):
+            if len(y.shape) == 1:
+                if isinstance(y, (pd.Series, pd.DataFrame)):
+                    y = y.to_numpy()
+                y = y.reshape([-1, 1])
+        else:
+            y = np.array(y).reshape([-1, 1])
+
+        return y
+
+    def fit(self, X, y):
+        self.classifier.fit(X, y)
+
+        y = self._to_matrix(y)
+        if self.encoder is not None:
+            self.encoder.fit(y)
+
+        return self
+
+    def transform(self, X, y=None):
+        """
+        Redirect output from classifier.
+        """
+        y_output = self.classifier.predict(X)
+
+        # Encode output of classifier.
+        if self.encoder:
+            y_output = self._to_matrix(y_output)
+            y_output = self.encoder.transform(y_output)
+
+        return y_output
