@@ -39,3 +39,21 @@ def load_avenio_files(
     phenotypes[columns_to_int] = phenotypes[columns_to_int].astype(int)
 
     return (mutation_data_frame, no_mutation_found_patients, phenotypes)
+
+
+def add_mutationless_patients(
+    mutation_table: pd.DataFrame, mutationless_patients: pd.Series
+) -> pd.DataFrame:
+    """
+    Add mutationless patients to the mutation table by filling the rows with zeros.
+    """
+    no_mutations = pd.DataFrame(
+        # Create table of zeros.
+        np.zeros([mutationless_patients.shape[0], mutation_table.shape[1]]),
+        # Use column names of `patient_mutation_frequencies`.
+        columns=mutation_table.columns,
+        # Index by patient id.
+        index=mutationless_patients.values,
+    )
+    # Append to table with patient mutations.
+    return mutation_table.append(no_mutations)
