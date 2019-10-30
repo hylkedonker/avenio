@@ -1,5 +1,6 @@
 from typing import Callable, Iterable, List, Optional, Tuple
 
+from catboost import CatBoostClassifier
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -29,6 +30,22 @@ def dummy_encode_mutations(
         dummy_data_frame.loc[patient_id][gene] += len(patient_genes)
 
     return dummy_data_frame
+
+
+def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert all text columns to lower case.
+    """
+    df = data_frame.copy()
+    for column in data_frame.columns:
+        # This is a dirty way to check if it is non-numeric, but pandas thinks
+        # all the columns are strings.
+        try:
+            float(data_frame[column].iloc[0])
+        except ValueError:
+            df[column] = data_frame[column].str.lower()
+
+    return df
 
 
 def patient_allele_frequencies(
@@ -254,3 +271,35 @@ class ClassifierAsTransformer(BaseEstimator, TransformerMixin):
             y_output = self.encoder.transform(y_output)
 
         return y_output
+
+
+class CustomCatBoostClassifier(CatBoostClassifier):
+    def __init__(self, cat_features, eval_set=None, **kwargs):
+        self.cat_features = cat_features
+        self.eval_set = eval_set
+        super().__init__(**kwargs)
+
+    def fit(self, X, y=None, **fit_params):
+        """
+        Fit catboost classifier.
+        """
+        return super().fit(
+            X,
+            y=y,
+            cat_features=self.cat_features,
+            eval_set=self.eval_set,
+            **fit_params
+        )
+
+
+def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> pd.DataFrame:
+    """
+    Thresshold: genes must occur at least this many times.
+    """
+    # What elements are non-zero?
+    non_zero_values = data_frame[data_frame != 0]
+    # Pick columns that have at least `LAMBDA` occurences.
+    gene_thressholded = non_zero_values.count() >= thresshold
+    genes_to_pick = gene_thressholded.index[gene_thressholded]
+    frequent_mutations = genes_to_pick.values
+    return frequent_mutations

@@ -7,6 +7,7 @@ from scipy.stats import pearsonr
 from sklearn.tree import DecisionTreeClassifier
 
 from transform import (
+    categorical_columns_to_lower,
     ClassifierAsTransformer,
     get_top_correlated,
     patient_allele_frequencies,
@@ -189,6 +190,19 @@ class TestTransforms(unittest.TestCase):
         gene_1, gene_2, p = top_df.loc[0, ["gene 1", "gene 2", "p-value"]]
         # Check that alignment is correct.
         self.assertEqual(pval_corr.loc[gene_1, gene_2], p)
+
+    def test_categorical_columns_to_lower(self):
+        """
+        Test that categorical columns are converted to lower case.
+        """
+        df = pd.DataFrame(np.array([range(4), ("a", "b", "A", "c")]).T)
+        df2 = categorical_columns_to_lower(df)
+
+        # Check that first column remains untouched.
+        pd.testing.assert_series_equal(df.iloc[:, 0], df2.iloc[:, 0])
+
+        # And check that elements have been turned in to lower case.
+        self.assertTrue(df2.iloc[:, 1].equals(pd.Series(["a", "b", "a", "c"])))
 
 
 class TestClassifierAsTransformer(unittest.TestCase):
