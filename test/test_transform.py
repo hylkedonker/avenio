@@ -6,8 +6,8 @@ from pandas.testing import assert_series_equal
 from scipy.stats import pearsonr
 from sklearn.tree import DecisionTreeClassifier
 
+from source import categorical_columns_to_lower
 from transform import (
-    categorical_columns_to_lower,
     ClassifierAsTransformer,
     get_top_correlated,
     patient_allele_frequencies,

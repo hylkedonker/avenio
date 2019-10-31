@@ -32,22 +32,6 @@ def dummy_encode_mutations(
     return dummy_data_frame
 
 
-def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convert all text columns to lower case.
-    """
-    df = data_frame.copy()
-    for column in data_frame.columns:
-        # This is a dirty way to check if it is non-numeric, but pandas thinks
-        # all the columns are strings.
-        try:
-            float(data_frame[column].iloc[0])
-        except ValueError:
-            df[column] = data_frame[column].str.lower()
-
-    return df
-
-
 def patient_allele_frequencies(
     data_frame: pd.DataFrame,
     gene_vocabulary: Iterable,
@@ -292,7 +276,7 @@ class CustomCatBoostClassifier(CatBoostClassifier):
         )
 
 
-def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> pd.DataFrame:
+def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     """
     Thresshold: genes must occur at least this many times.
     """

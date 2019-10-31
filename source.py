@@ -7,6 +7,22 @@ RANDOM_STATE = 1234
 np.random.seed(RANDOM_STATE)
 
 
+def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
+    """
+    Convert all text columns to lower case.
+    """
+    df = data_frame.copy()
+    for column in data_frame.columns:
+        # This is a dirty way to check if it is non-numeric, but pandas thinks
+        # all the columns are strings.
+        try:
+            float(data_frame[column].iloc[0])
+        except ValueError:
+            df[column] = data_frame[column].str.lower()
+
+    return df
+
+
 def load_avenio_files(
     spread_sheet_filename: str = "2019-08-27_PLASMA_DEFAULT_Results_Groningen.xlsx",
     spss_filename: str = "phenotypes_20191018.sav",
@@ -38,7 +54,11 @@ def load_avenio_files(
     columns_to_int = ["stage", "therapyline"]
     phenotypes[columns_to_int] = phenotypes[columns_to_int].astype(int)
 
-    return (mutation_data_frame, no_mutation_found_patients, phenotypes)
+    return (
+        mutation_data_frame,
+        no_mutation_found_patients,
+        categorical_columns_to_lower(phenotypes),
+    )
 
 
 def add_mutationless_patients(
