@@ -1,10 +1,15 @@
 from typing import Callable, Iterable, List, Optional, Tuple
 
-from catboost import CatBoostClassifier
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import OrdinalEncoder
+from sklearn.model_selection import train_test_split
+
+from source import (
+    add_mutationless_patients,
+    load_avenio_files,
+    phenotype_features,
+    phenotype_labels,
+)
 
 
 def dummy_encode_mutations(
@@ -211,71 +216,6 @@ def clean_mutation_columns(
     return clean_data.dropna(subset=columns_to_number)
 
 
-class ClassifierAsTransformer(BaseEstimator, TransformerMixin):
-    """
-    Wrap transformer around classifier.
-    """
-
-    def __init__(self, classifier, encoder: Optional = OrdinalEncoder()):
-        self.classifier = classifier
-        self.encoder = encoder
-
-    def _to_matrix(self, y):
-        """
-        Represent vector as matrix.
-        """
-        if hasattr(y, "shape"):
-            if len(y.shape) == 1:
-                if isinstance(y, (pd.Series, pd.DataFrame)):
-                    y = y.to_numpy()
-                y = y.reshape([-1, 1])
-        else:
-            y = np.array(y).reshape([-1, 1])
-
-        return y
-
-    def fit(self, X, y):
-        self.classifier.fit(X, y)
-
-        y = self._to_matrix(y)
-        if self.encoder is not None:
-            self.encoder.fit(y)
-
-        return self
-
-    def transform(self, X, y=None):
-        """
-        Redirect output from classifier.
-        """
-        y_output = self.classifier.predict(X)
-
-        # Encode output of classifier.
-        if self.encoder:
-            y_output = self._to_matrix(y_output)
-            y_output = self.encoder.transform(y_output)
-
-        return y_output
-
-
-class CustomCatBoostClassifier(CatBoostClassifier):
-    def __init__(self, cat_features, eval_set=None, **kwargs):
-        self.cat_features = cat_features
-        self.eval_set = eval_set
-        super().__init__(**kwargs)
-
-    def fit(self, X, y=None, **fit_params):
-        """
-        Fit catboost classifier.
-        """
-        return super().fit(
-            X,
-            y=y,
-            cat_features=self.cat_features,
-            eval_set=self.eval_set,
-            **fit_params
-        )
-
-
 def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     """
     Thresshold: genes must occur at least this many times.
@@ -287,3 +227,70 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     genes_to_pick = gene_thressholded.index[gene_thressholded]
     frequent_mutations = genes_to_pick.values
     return frequent_mutations
+
+
+def load_process_and_store_spreadsheets(
+    spread_sheet_filename: str = "2019-08-27_PLASMA_DEFAULT_Results_Groningen.xlsx",
+    spss_filename: str = "phenotypes_20191018.sav",
+    transformation: Callable = lambda x, y: y - x,
+    allele_columns: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
+    random_state: int = 1234,
+    all_filename: str = "output/all_data.tsv",
+    train_filename: str = "output/train.tsv",
+    test_filename: str = "output/test.tsv",
+):
+    """
+    Read, clean, transform and store raw data.
+
+    1) Load the mutation Excel spreadsheet and the phenotype SPSS file.
+    2) Transform the mutation columns.
+    3) Combine mutation and phenotype data.
+    4) Split and store data to disk.
+    """
+    # Load data from spreadsheet and SPSS files.
+    patient_mutations, patient_no_mutations, phenotypes = load_avenio_files(
+        spread_sheet_filename, spss_filename
+    )
+
+    # Vocabulary is the entire dataset, not only training set. Otherwise we run
+    # into problems during inference.
+    gene_vocabulary = patient_mutations["Gene"].unique()
+    # allele_columns = ["T0: Allele \nFraction", "T1: Allele Fraction"]
+    allele_columns = [
+        "T0: No. Mutant \nMolecules per mL",
+        "T1: No. Mutant \nMolecules per mL",
+    ]
+
+    # Convert particular columns to numbers and drop rows with missing data.
+    patient_mutations = clean_mutation_columns(patient_mutations)
+
+    # Perform `transformation` on `allele_columns`. That is, calculate change in
+    # DNA mutation.
+    patient_mutation_frequencies = patient_allele_frequencies(
+        patient_mutations,
+        gene_vocabulary,
+        allele_columns=allele_columns,
+        transformation=transformation,
+    )
+    # Don't forget about patient for which no mutations where found.
+    patient_mutation_frequencies = add_mutationless_patients(
+        patient_mutation_frequencies, patient_no_mutations
+    )
+    phenotypes_to_keep = phenotype_features + phenotype_labels
+    # Combine mutation data and phenotype data.
+    X = pd.merge(
+        left=patient_mutation_frequencies,
+        right=phenotypes[phenotypes_to_keep],
+        left_index=True,
+        right_index=True,
+    )
+    X.dropna(subset=["response_grouped"], inplace=True)
+
+    f_test = 0.3
+    X_train, X_test = train_test_split(
+        X, test_size=f_test, random_state=random_state
+    )
+    # Write data to disk.
+    X.to_csv(all_filename, sep="\t")
+    X_train.to_csv(train_filename, sep="\t")
+    X_test.to_csv(test_filename, sep="\t")

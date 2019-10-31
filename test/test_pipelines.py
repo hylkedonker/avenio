@@ -25,8 +25,3 @@ class TestPipelineUtils(unittest.TestCase):
         np.testing.assert_array_equal(
             select_no_phenotype_columns(X), X[["a", "c"]]
         )
-
-    def test_pipelines(self):
-        """
-        """
-        # pipelines(DecisionTreeClassifier)

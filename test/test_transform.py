@@ -1,14 +1,16 @@
+import os
+import tempfile
 import unittest
 
 import numpy as np
 import pandas as pd
 from pandas.testing import assert_series_equal
 from scipy.stats import pearsonr
-from sklearn.tree import DecisionTreeClassifier
 
-from source import categorical_columns_to_lower
+from source import categorical_columns_to_lower, read_preprocessed_data
+
 from transform import (
-    ClassifierAsTransformer,
+    load_process_and_store_spreadsheets,
     get_top_correlated,
     patient_allele_frequencies,
 )
@@ -204,25 +206,31 @@ class TestTransforms(unittest.TestCase):
         # And check that elements have been turned in to lower case.
         self.assertTrue(df2.iloc[:, 1].equals(pd.Series(["a", "b", "a", "c"])))
 
+    def test_load_process_and_store_spreadsheets(self):
+        """
+        Perform consistency checks on the loaded data.
+        """
+        # Generate set of filenames.
+        d = tempfile.mkdtemp()
+        filename_all = os.path.join(d, "all_data.tsv")
+        filename_train = os.path.join(d, "train.tsv")
+        filename_test = os.path.join(d, "test.tsv")
 
-class TestClassifierAsTransformer(unittest.TestCase):
-    def setUp(self):
-        """
-        Initialise environment for testing.
-        """
-        self.seed = 1234
-        np.random.seed(self.seed)
-
-    def test_pipelines(self):
-        """
-        Verify that the transformer wrapper classifier works as expected.
-        """
-        X = np.random.random([10, 2])
-        y = ["PD", "SD", "PR", "PD", "PR", "SD", "CR", "PD", "PR", "SD"]
-        tree = DecisionTreeClassifier(random_state=self.seed).fit(X, y)
-        tree_transformer = ClassifierAsTransformer(
-            classifier=DecisionTreeClassifier(random_state=self.seed), encoder=None
-        ).fit(X, y)
-        np.testing.assert_array_equal(
-            tree.predict(X), tree_transformer.transform(X)
+        # Process all the data and store to disk.
+        load_process_and_store_spreadsheets(
+            all_filename=filename_all,
+            train_filename=filename_train,
+            test_filename=filename_test,
         )
+
+        # Reload the stored data.
+        X_all, y_all = read_preprocessed_data(filename_all)
+        X_train, y_train = read_preprocessed_data(filename_train)
+        X_test, y_test = read_preprocessed_data(filename_test)
+
+        # Test that the total row counts add up.
+        self.assertEqual(X_all.shape[0], X_train.shape[0] + X_test.shape[0])
+
+        # The columns must be identical.
+        self.assertTrue(np.all(X_all.columns == X_train.columns))
+        self.assertTrue(np.all(X_train.columns == X_test.columns))

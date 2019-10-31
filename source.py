@@ -3,8 +3,39 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+
 RANDOM_STATE = 1234
 np.random.seed(RANDOM_STATE)
+
+
+# Phenotype features that serve as input for the model.
+phenotype_features = [
+    "gender",
+    "leeftijd",
+    "stage",
+    "therapyline",
+    "smokingstatus",
+    "Systemischetherapie",
+    "histology_grouped",
+    "lymfmeta",
+    "brainmeta",
+    "adrenalmeta",
+    "livermeta",
+    "lungmeta",
+    "skeletonmeta",
+]
+
+
+# Phenotype labels that we wish to predict.
+phenotype_labels = [
+    "Clinical_Response",
+    "response_grouped",
+    "progressie",
+    "PFS_days",
+    "OS_days",
+    "OS_months",
+    "PFS_months",
+]
 
 
 def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
@@ -77,3 +108,18 @@ def add_mutationless_patients(
     )
     # Append to table with patient mutations.
     return mutation_table.append(no_mutations)
+
+
+def read_preprocessed_data(filename: str, split_label=True) -> Tuple[pd.DataFrame]:
+    """
+    Read preprocessed data from disk and seperate features from labels if needed.
+    """
+    X = pd.read_csv(filename, sep="\t")
+    X.set_index(X.columns[0], drop=True, inplace=True)
+    X.index.name = "Patient ID"
+    if split_label:
+        y = X[phenotype_labels].copy()
+        X.drop(phenotype_labels, axis=1, inplace=True)
+        return (X, y)
+
+    return (X,)
