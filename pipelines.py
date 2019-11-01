@@ -162,6 +162,25 @@ def pipeline_Freeman(Estimator, **kwargs):
     return p_Freeman
 
 
+def hybrid_classifier(random_state: int = 1234):
+    log_kwargs = {
+        "random_state": random_state,
+        "penalty": "elasticnet",
+        "class_weight": "balanced",
+        "solver": "saga",
+        "l1_ratio": 0.75,
+        "C": 0.5,
+    }
+    tree_kwargs = {"random_state": random_state, "max_depth": 4}
+    return VotingClassifier(
+        estimators=[
+            ("phenotype", pipeline_Richard(LogisticRegression, **log_kwargs)),
+            ("genetics", pipeline_Julian(DecisionTreeClassifier, **tree_kwargs)),
+        ],
+        # voting="soft",
+    )
+
+
 def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
     """
     Generate pipelines for a given classifier.
