@@ -1,19 +1,23 @@
 from typing import Callable
 
-import category_encoders as ce
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
     GradientBoostingClassifier,
+    GradientBoostingRegressor,
     RandomForestClassifier,
+    RandomForestRegressor,
     VotingClassifier,
+    VotingRegressor,
 )
-from sklearn.dummy import DummyClassifier
+from sklearn.dummy import DummyClassifier, DummyRegressor
+from sklearn.linear_model import LogisticRegression, ElasticNet
 from sklearn.metrics import accuracy_score
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC, SVR
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from source import phenotype_features
 from models import UniqueFeatureFilter
@@ -59,11 +63,12 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     return X[no_phenotype_columns]
 
 
-def pipelines(Classifier, **kwargs) -> dict:
+def pipelines(Estimator, classification: bool = True, **kwargs) -> dict:
     """
     Generate pipelines for a given classifier.
     """
-
+    # A simple one-hot-encoder seems to work best (as opposed to more fancy
+    # catboost encoder).
     category_preprocess = ColumnTransformer(
         [
             (
@@ -82,7 +87,7 @@ def pipelines(Classifier, **kwargs) -> dict:
                 FunctionTransformer(select_phenotype_columns, validate=False),
             ),
             ("transform_columns", category_preprocess),
-            ("classify", Classifier(**kwargs)),
+            ("classify", Estimator(**kwargs)),
         ]
     )
 
@@ -94,23 +99,26 @@ def pipelines(Classifier, **kwargs) -> dict:
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
             ("filter_rare_mutations", UniqueFeatureFilter(thresshold=5)),
-            ("classify", Classifier(**kwargs)),
+            ("classify", Estimator(**kwargs)),
         ]
     )
 
     # Combine Richard & Julian into Lev.
-    p_Lev = VotingClassifier(
-        estimators=[("phenotype", p_Richard), ("mutation", p_Julian)],
-        voting="soft",
-        # Model using all the data is given less weight.
-        #         weights=[2, 2, 1],
-    )
+    if classification:
+        p_Lev = VotingClassifier(
+            estimators=[("phenotype", p_Richard), ("mutation", p_Julian)],
+            voting="soft",
+        )
+    else:
+        p_Lev = VotingRegressor(
+            estimators=[("phenotype", p_Richard), ("mutation", p_Julian)]
+        )
 
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
         steps=[
             ("transform_columns", category_preprocess),
-            ("classify", Classifier(**kwargs)),
+            ("classify", Estimator(**kwargs)),
         ]
     )
 
@@ -122,7 +130,28 @@ def pipelines(Classifier, **kwargs) -> dict:
     }
 
 
-def build_pipelines(random_state: int = 1234) -> dict:
+def build_regression_pipelines(random_state: int = 1234) -> dict:
+    """
+    Build a regression pipelines using a variety
+    """
+    regressors = {
+        DecisionTreeRegressor: {"random_state": random_state},
+        RandomForestRegressor: {"random_state": random_state},
+        GradientBoostingRegressor: {"random_state": random_state},
+        KNeighborsRegressor: {},
+        ElasticNet: {"random_state": random_state},
+        SVR: {"kernel": "rbf", "gamma": "scale"},
+        DummyRegressor: {"strategy": "median"},
+    }
+    return {
+        str(Regressor.__name__): pipelines(
+            Regressor, classification=False, **kwargs
+        )
+        for Regressor, kwargs in regressors.items()
+    }
+
+
+def build_classifier_pipelines(random_state: int = 1234) -> dict:
     """
     For a variety of classifier, create a set of pipelines.
     """
@@ -143,13 +172,27 @@ def build_pipelines(random_state: int = 1234) -> dict:
             "n_estimators": 15,
         },
         KNeighborsClassifier: {"n_neighbors": 2, "weights": "distance"},
+        LogisticRegression: {
+            "random_state": random_state,
+            "penalty": "elasticnet",
+            "solver": "saga",
+            "l1_ratio": 0.5,
+        },
+        SVC: {
+            "random_state": random_state,
+            "kernel": "rbf",
+            "probability": True,
+            "gamma": "scale",
+        },
         DummyClassifier: {
             "strategy": "most_frequent",
             "random_state": random_state,
         },
     }
     return {
-        str(Classifier.__name__): pipelines(Classifier, **kwargs)
+        str(Classifier.__name__): pipelines(
+            Classifier, classification=True, **kwargs
+        )
         for Classifier, kwargs in classifiers.items()
     }
 
@@ -161,6 +204,7 @@ def benchmark_pipelines(
     X_test: pd.DataFrame,
     y_test: pd.DataFrame,
     metric: Callable = accuracy_score,
+    **metric_kwargs,
 ) -> pd.DataFrame:
     """
     Make a benchmark of classifier versus preprocessing architecture.
@@ -175,10 +219,10 @@ def benchmark_pipelines(
             p.fit(X_train, y_train)
             y_train_pred = p.predict(X_train)
             y_test_pred = p.predict(X_test)
-            benchmark_result[classifier_name][f"{pipeline_name}_train"] = metric(
-                y_train, y_train_pred
-            )
+            # benchmark_result[classifier_name][f"{pipeline_name}_train"] = metric(
+            #     y_train, y_train_pred, **metric_kwargs
+            # )
             benchmark_result[classifier_name][f"{pipeline_name}_test"] = metric(
-                y_test, y_test_pred
+                y_test, y_test_pred, **metric_kwargs
             )
     return pd.DataFrame(benchmark_result).T
