@@ -1,5 +1,6 @@
 from typing import Callable
 
+from category_encoders import CatBoostEncoder
 from catboost import CatBoostClassifier
 import pandas as pd
 from sklearn.compose import ColumnTransformer
@@ -41,6 +42,17 @@ categorical_input_columns = [
     "skeletonmeta",
 ]
 
+phenotypes_to_drop = [
+    # "Systemischetherapie",
+    # "histology_grouped",
+    # "lymfmeta",
+    # "brainmeta",
+    # "adrenalmeta",
+    # "livermeta",
+    # "lungmeta",
+    # "skeletonmeta",
+]
+
 
 def select_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     """
@@ -64,19 +76,28 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     return X[no_phenotype_columns]
 
 
-def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
+def drop_specific_phenotypes(X: pd.DataFrame) -> pd.DataFrame:
+    X_prime = X.drop(columns=phenotypes_to_drop)
+    return X_prime
+
+
+def pipeline_Richard(Estimator, **kwargs):
     """
-    Generate pipelines for a given classifier.
+    Phenotype-only pipeline Richard.
     """
-    d = {}
     # A simple one-hot-encoder seems to work best (as opposed to more fancy
     # catboost encoder).
+    # category_preprocess = CatBoostEncoder(cols=categorical_input_columns)
     category_preprocess = ColumnTransformer(
         [
             (
                 "LabelEncoder",
                 OneHotEncoder(handle_unknown="ignore"),
-                categorical_input_columns,
+                [
+                    column
+                    for column in categorical_input_columns
+                    if column not in phenotypes_to_drop
+                ],
             )
         ],
         remainder="passthrough",
@@ -88,13 +109,21 @@ def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
                 "select_columns",
                 FunctionTransformer(select_phenotype_columns, validate=False),
             ),
+            (
+                "remove_specific_phenotypes",
+                FunctionTransformer(drop_specific_phenotypes, validate=False),
+            ),
             ("transform_columns", category_preprocess),
             ("classify", Estimator(**kwargs)),
         ]
     )
-    d["Richard"] = p_Richard
+    return p_Richard
 
-    # Mutation-only pipeline Julian.
+
+def pipeline_Julian(Estimator, **kwargs):
+    """
+    Mutation-only pipeline Julian.
+    """
     p_Julian = Pipeline(
         steps=[
             (
@@ -105,26 +134,54 @@ def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
             ("classify", Estimator(**kwargs)),
         ]
     )
-    d["Julian"] = p_Julian
+    return p_Julian
+
+
+def pipeline_Freeman(Estimator, **kwargs):
+    """
+    All-feature pipeline Freeman.
+    """
+    all_categorical_columns_transformer = ColumnTransformer(
+        [
+            (
+                "LabelEncoder",
+                OneHotEncoder(handle_unknown="ignore"),
+                categorical_input_columns,
+            )
+        ],
+        remainder="passthrough",
+    )
+
+    # Pipeline with all features, Freeman.
+    p_Freeman = Pipeline(
+        steps=[
+            ("transform_columns", all_categorical_columns_transformer),
+            ("classify", Estimator(**kwargs)),
+        ]
+    )
+    return p_Freeman
+
+
+def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
+    """
+    Generate pipelines for a given classifier.
+    """
+    d = {
+        "Richard": pipeline_Richard(Estimator, **kwargs),
+        "Julian": pipeline_Julian(Estimator, **kwargs),
+        "Freeman": pipeline_Freeman(Estimator, **kwargs),
+    }
 
     # Combine Richard & Julian into Lev.
     if VotingEstimator is not None:
         vote_kwargs = {
-            "estimators": [("phenotype", p_Richard), ("mutation", p_Julian)]
+            "estimators": [("phenotype", d["Richard"]), ("mutation", d["Julian"])]
         }
         if type(VotingEstimator) == VotingClassifier:
             vote_kwargs["voting"] = "soft"
         p_Lev = VotingEstimator(**vote_kwargs)
         d["Lev"] = p_Lev
 
-    # Pipeline with all features, Freeman.
-    p_Freeman = Pipeline(
-        steps=[
-            ("transform_columns", category_preprocess),
-            ("classify", Estimator(**kwargs)),
-        ]
-    )
-    d["Freeman"] = p_Freeman
     return d
 
 
