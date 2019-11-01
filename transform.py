@@ -255,11 +255,6 @@ def load_process_and_store_spreadsheets(
     # Vocabulary is the entire dataset, not only training set. Otherwise we run
     # into problems during inference.
     gene_vocabulary = patient_mutations["Gene"].unique()
-    # allele_columns = ["T0: Allele \nFraction", "T1: Allele Fraction"]
-    allele_columns = [
-        "T0: No. Mutant \nMolecules per mL",
-        "T1: No. Mutant \nMolecules per mL",
-    ]
 
     # Convert particular columns to numbers and drop rows with missing data.
     patient_mutations = clean_mutation_columns(patient_mutations)

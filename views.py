@@ -1,6 +1,11 @@
+from copy import copy
+
 from matplotlib import pyplot as plt
 import numpy as np
+import seaborn as sns
+from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
+from sklearn.pipeline import Pipeline
 from sklearn.utils.multiclass import unique_labels
 
 
@@ -62,3 +67,34 @@ def plot_confusion_matrix(
             )
     fig.tight_layout()
     return ax
+
+
+def remove_classifier_from_pipelines(pipelines: dict) -> dict:
+    """
+    Make new pipelines with last step (= classifier) removed.
+    """
+    truncated_pipelines = {}
+    for name, p in pipelines.items():
+        # Ignore classifiers.
+        if not isinstance(p, Pipeline) or len(p.steps) == 1:
+            continue
+        # Make a copy, and delete last step.
+        p_copy = copy(p)
+        del p_copy.steps[-1]
+        truncated_pipelines[name] = p_copy
+
+    return truncated_pipelines
+
+
+def view_pipelines(pipelines: dict, X, y, random_state: int = 1234):
+    """
+    Generate lower dimensional projection of transformed data.
+    """
+    truncated_pipelines = remove_classifier_from_pipelines(pipelines)
+    for name, pipeline in truncated_pipelines.items():
+        plt.figure()
+        plt.title(name)
+        X_T = pipeline.fit_transform(X)
+        # Project onto 2D.
+        X_subspace = TSNE(random_state=random_state).fit_transform(X_T)
+        sns.scatterplot(x=X_subspace[:, 0], y=X_subspace[:, 1], hue=y)

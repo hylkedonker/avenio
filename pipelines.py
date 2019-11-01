@@ -1,5 +1,6 @@
 from typing import Callable
 
+from catboost import CatBoostClassifier
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
@@ -11,7 +12,7 @@ from sklearn.ensemble import (
     VotingRegressor,
 )
 from sklearn.dummy import DummyClassifier, DummyRegressor
-from sklearn.linear_model import LogisticRegression, ElasticNet
+from sklearn.linear_model import LogisticRegression, ElasticNet, LinearRegression
 from sklearn.metrics import accuracy_score
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.pipeline import Pipeline
@@ -63,10 +64,11 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     return X[no_phenotype_columns]
 
 
-def pipelines(Estimator, classification: bool = True, **kwargs) -> dict:
+def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
     """
     Generate pipelines for a given classifier.
     """
+    d = {}
     # A simple one-hot-encoder seems to work best (as opposed to more fancy
     # catboost encoder).
     category_preprocess = ColumnTransformer(
@@ -90,6 +92,7 @@ def pipelines(Estimator, classification: bool = True, **kwargs) -> dict:
             ("classify", Estimator(**kwargs)),
         ]
     )
+    d["Richard"] = p_Richard
 
     # Mutation-only pipeline Julian.
     p_Julian = Pipeline(
@@ -102,17 +105,17 @@ def pipelines(Estimator, classification: bool = True, **kwargs) -> dict:
             ("classify", Estimator(**kwargs)),
         ]
     )
+    d["Julian"] = p_Julian
 
     # Combine Richard & Julian into Lev.
-    if classification:
-        p_Lev = VotingClassifier(
-            estimators=[("phenotype", p_Richard), ("mutation", p_Julian)],
-            voting="soft",
-        )
-    else:
-        p_Lev = VotingRegressor(
-            estimators=[("phenotype", p_Richard), ("mutation", p_Julian)]
-        )
+    if VotingEstimator is not None:
+        vote_kwargs = {
+            "estimators": [("phenotype", p_Richard), ("mutation", p_Julian)]
+        }
+        if type(VotingEstimator) == VotingClassifier:
+            vote_kwargs["voting"] = "soft"
+        p_Lev = VotingEstimator(**vote_kwargs)
+        d["Lev"] = p_Lev
 
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
@@ -121,13 +124,8 @@ def pipelines(Estimator, classification: bool = True, **kwargs) -> dict:
             ("classify", Estimator(**kwargs)),
         ]
     )
-
-    return {
-        "Richard": p_Richard,
-        "Julian": p_Julian,
-        "Lev": p_Lev,
-        "Freeman": p_Freeman,
-    }
+    d["Freeman"] = p_Freeman
+    return d
 
 
 def build_regression_pipelines(random_state: int = 1234) -> dict:
@@ -135,17 +133,30 @@ def build_regression_pipelines(random_state: int = 1234) -> dict:
     Build a regression pipelines using a variety
     """
     regressors = {
-        DecisionTreeRegressor: {"random_state": random_state},
-        RandomForestRegressor: {"random_state": random_state},
-        GradientBoostingRegressor: {"random_state": random_state},
-        KNeighborsRegressor: {},
-        ElasticNet: {"random_state": random_state},
+        DecisionTreeRegressor: {"random_state": random_state, "max_depth": 4},
+        RandomForestRegressor: {
+            "random_state": random_state,
+            "max_depth": 4,
+            "n_estimators": 10,
+        },
+        GradientBoostingRegressor: {
+            "random_state": random_state,
+            "n_estimators": 15,
+        },
+        KNeighborsRegressor: {"n_neighbors": 5},
+        ElasticNet: {
+            "random_state": random_state,
+            "l1_ratio": 0.75,
+            "alpha": 1.0,
+            "max_iter": 1000,
+        },
+        LinearRegression: {},
         SVR: {"kernel": "rbf", "gamma": "scale"},
         DummyRegressor: {"strategy": "median"},
     }
     return {
         str(Regressor.__name__): pipelines(
-            Regressor, classification=False, **kwargs
+            Regressor, VotingEstimator=VotingRegressor, **kwargs
         )
         for Regressor, kwargs in regressors.items()
     }
@@ -175,8 +186,10 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
         LogisticRegression: {
             "random_state": random_state,
             "penalty": "elasticnet",
+            "class_weight": "balanced",
             "solver": "saga",
-            "l1_ratio": 0.5,
+            "l1_ratio": 0.75,
+            "C": 0.5,
         },
         SVC: {
             "random_state": random_state,
@@ -184,6 +197,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "probability": True,
             "gamma": "scale",
         },
+        # CatBoostClassifier: {"random_seed": random_state},
         DummyClassifier: {
             "strategy": "most_frequent",
             "random_state": random_state,
@@ -191,7 +205,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     }
     return {
         str(Classifier.__name__): pipelines(
-            Classifier, classification=True, **kwargs
+            Classifier, VotingEstimator=VotingClassifier, **kwargs
         )
         for Classifier, kwargs in classifiers.items()
     }
