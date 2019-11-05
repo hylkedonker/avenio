@@ -48,11 +48,7 @@ class CustomCatBoostClassifier(CatBoostClassifier):
         Fit catboost classifier.
         """
         return super().fit(
-            X,
-            y=y,
-            cat_features=self.cat_features,
-            eval_set=self.eval_set,
-            **fit_params,
+            X, y=y, cat_features=self.cat_features, eval_set=self.eval_set, **fit_params
         )
 
 
@@ -113,7 +109,7 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
     def __init__(
         self,
         embedding_model: gensim.models.word2vec.Word2Vec = None,
-        ignore_unknown_columns: bool = False,
+        remainder: str = "ignore",
     ):
         # Load model if none was passed.
         if embedding_model is None:
@@ -123,7 +119,9 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
         else:
             self.model = embedding_model
 
-        self.ignore_ = ignore_unknown_columns
+        if remainder not in ("ignore", "drop", "fail"):
+            raise ValueError(f"Unknown action for unknown_columns {unknown_columns}.")
+        self.unknown_columns_ = remainder
 
     def fit(self, X: pd.DataFrame, y=None):
         """
@@ -133,7 +131,10 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
         if not isinstance(X, pd.DataFrame):
             raise TypeError("X must be pandas data frame.")
 
-        if not self.ignore_ and not set(X.columns).issubset(set(target_genes)):
+        if (
+            not set(X.columns).issubset(set(target_genes))
+            and self.unknown_columns_ == "fail"
+        ):
             raise KeyError(f"Unknown columns in {X.columns}")
 
         # What columns to use.
@@ -157,15 +158,18 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
             # contributions of all genes.
             X_T += X[column].values.reshape(-1, 1) * v.reshape(1, -1)
 
-        columns_to_keep = [
-            column
-            for column in X.columns
-            if column not in self.columns_to_transform_
-        ]
+        # Keep remainder of columns when mode is "ignore".
+        if self.unknown_columns_ == "ignore":
+            columns_to_keep = [
+                column
+                for column in X.columns
+                if column not in self.columns_to_transform_
+            ]
+            # When list not empty, append the transformed data.
+            if columns_to_keep:
+                return pd.concat(
+                    [X[columns_to_keep], pd.DataFrame(X_T, index=X.index)], axis=1
+                )
 
-        if columns_to_keep:
-            return pd.concat(
-                [X[columns_to_keep], pd.DataFrame(X_T, index=X.index)], axis=1
-            )
-
-        return X_T
+        # Otherwise just drop all other columns (= keep only transformed colums).
+        return pd.DataFrame(X_T)

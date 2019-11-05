@@ -22,7 +22,7 @@ from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from source import phenotype_features
-from models import UniqueFeatureFilter
+from models import Gene2Vec, UniqueFeatureFilter
 
 
 # From those listed above, the following columns are categorical (not counting
@@ -59,9 +59,7 @@ def select_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     Ignore mutaton data columns.
     """
     # The following list does not contain phenotypes that are not in `X`.
-    phenotype_columns = [
-        column for column in X.columns if column in phenotype_features
-    ]
+    phenotype_columns = [column for column in X.columns if column in phenotype_features]
     return X[phenotype_columns]
 
 
@@ -162,6 +160,43 @@ def pipeline_Freeman(Estimator, **kwargs):
     return p_Freeman
 
 
+def pipeline_Nikolay(Estimator, **kwargs):
+    """
+    Pipeline with gene embeddings.
+    """
+    p_Bogolyubov = Pipeline(
+        steps=[
+            ("vectorise_mutations", Gene2Vec(remainder="drop")),
+            ("classify", Estimator(**kwargs)),
+        ]
+    )
+    return p_Bogolyubov
+
+
+def pipeline_Pyotr(Estimator, **kwargs):
+    """
+    Pipeline with both embeddings and categorical data.
+    """
+    all_categorical_columns_transformer = ColumnTransformer(
+        [
+            (
+                "LabelEncoder",
+                OneHotEncoder(handle_unknown="ignore"),
+                categorical_input_columns,
+            )
+        ],
+        remainder="passthrough",
+    )
+    p_Kapitsa = Pipeline(
+        steps=[
+            ("vectorise_mutations", Gene2Vec(remainder="ignore")),
+            ("transform_categories", all_categorical_columns_transformer),
+            ("classify", Estimator(**kwargs)),
+        ]
+    )
+    return p_Kapitsa
+
+
 def hybrid_classifier(random_state: int = 1234):
     log_kwargs = {
         "random_state": random_state,
@@ -189,6 +224,8 @@ def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
         "Richard": pipeline_Richard(Estimator, **kwargs),
         "Julian": pipeline_Julian(Estimator, **kwargs),
         "Freeman": pipeline_Freeman(Estimator, **kwargs),
+        # "Nikolay": pipeline_Nikolay(Estimator, **kwargs),
+        # "Pyotr": pipeline_Pyotr(Estimator, **kwargs),
     }
 
     # Combine Richard & Julian into Lev.
@@ -215,10 +252,7 @@ def build_regression_pipelines(random_state: int = 1234) -> dict:
             "max_depth": 4,
             "n_estimators": 10,
         },
-        GradientBoostingRegressor: {
-            "random_state": random_state,
-            "n_estimators": 15,
-        },
+        GradientBoostingRegressor: {"random_state": random_state, "n_estimators": 15},
         KNeighborsRegressor: {"n_neighbors": 5},
         ElasticNet: {
             "random_state": random_state,
@@ -254,10 +288,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "max_depth": 5,
             "class_weight": "balanced_subsample",
         },
-        GradientBoostingClassifier: {
-            "random_state": random_state,
-            "n_estimators": 15,
-        },
+        GradientBoostingClassifier: {"random_state": random_state, "n_estimators": 15},
         KNeighborsClassifier: {"n_neighbors": 2, "weights": "distance"},
         LogisticRegression: {
             "random_state": random_state,
@@ -274,10 +305,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "gamma": "scale",
         },
         # CatBoostClassifier: {"random_seed": random_state},
-        DummyClassifier: {
-            "strategy": "most_frequent",
-            "random_state": random_state,
-        },
+        DummyClassifier: {"strategy": "most_frequent", "random_state": random_state},
     }
     return {
         str(Classifier.__name__): pipelines(

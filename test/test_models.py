@@ -43,9 +43,7 @@ class TestClassifierAsTransformer(unittest.TestCase):
         tree_transformer = ClassifierAsTransformer(
             classifier=DecisionTreeClassifier(random_state=self.seed), encoder=None
         ).fit(X, y)
-        np.testing.assert_array_equal(
-            tree.predict(X), tree_transformer.transform(X)
-        )
+        np.testing.assert_array_equal(tree.predict(X), tree_transformer.transform(X))
 
 
 class TestGene2Vec(unittest.TestCase):
@@ -61,21 +59,15 @@ class TestGene2Vec(unittest.TestCase):
         """
         #
         X = pd.DataFrame(
-            {
-                "TP53": [1.0, 0.0, 2.0],
-                "KRAS": [0.0, 2.0, 1.0],
-                "age": [30, 40, 40],
-            },
+            {"TP53": [1.0, 0.0, 2.0], "KRAS": [0.0, 2.0, 1.0], "age": [30, 40, 40]},
             index=[1, 2, 3],
         )
 
         with self.assertRaises(KeyError):
-            Gene2Vec(
-                embedding_model=self.model, ignore_unknown_columns=False
-            ).fit_transform(X)
+            Gene2Vec(embedding_model=self.model, remainder="fail").fit_transform(X)
 
         X_embed = Gene2Vec(
-            embedding_model=self.model, ignore_unknown_columns=True
+            embedding_model=self.model, remainder="ignore"
         ).fit_transform(X)
 
         # Check that the age column is unaffected.
@@ -89,3 +81,9 @@ class TestGene2Vec(unittest.TestCase):
         np.testing.assert_array_almost_equal(
             X_embed.iloc[2, 1:], 2 * self.model["TP53"] + self.model["KRAS"]
         )
+
+        # Check that unknown columns are dropped, when specified by `unknown_columns`.
+        X_embed2 = Gene2Vec(embedding_model=self.model, remainder="drop").fit_transform(
+            X
+        )
+        self.assertEqual(X_embed2.shape[1], 200)
