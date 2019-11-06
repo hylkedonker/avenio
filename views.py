@@ -1,12 +1,22 @@
 from copy import copy
+from typing import Iterable
 
+import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
+import scipy as sp
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
-from sklearn.utils.multiclass import unique_labels
+
+matplotlib.rc("font", size=22)
+matplotlib.rc("lines", linewidth=4)
+matplotlib.rc("figure", autolayout=True)
+matplotlib.rc("ytick", labelsize="large")
+matplotlib.rc("xtick", labelsize="large")
+matplotlib.rc("axes", labelsize="xx-large")
+matplotlib.rc("legend", fontsize="x-large")
 
 
 def plot_confusion_matrix(
@@ -98,3 +108,33 @@ def view_pipelines(pipelines: dict, X, y, random_state: int = 1234):
         # Project onto 2D.
         X_subspace = TSNE(random_state=random_state).fit_transform(X_T)
         sns.scatterplot(x=X_subspace[:, 0], y=X_subspace[:, 1], hue=y)
+
+
+def filter_outliers(array: Iterable, outlier_indices: list) -> np.array:
+    return np.array([a for i, a in enumerate(array) if i not in outlier_indices])
+
+
+def view_as_exponential(t, p, outlier_indices=[]):
+    # Make a fit without outliers.
+    slope, intercept, r_value, p_value, std_err = sp.stats.linregress(
+        filter_outliers(t, outlier_indices), filter_outliers(np.log(p), outlier_indices)
+    )
+
+    tau = -1.0 / slope * np.log(2)
+    plt.plot(t, slope * t + intercept, "-", label=r"$\tau={:.0f}$ days".format(tau))
+    plt.plot(t, np.log(p), "o")
+    # plt.xlim([-1, max(t) + 1])
+    plt.xlabel(r"$t$ (days)")
+    plt.ylabel(r"$\ln[N(t)]$")
+    ca = plt.gca()
+    ca.text(
+        0.8,
+        0.8,
+        "$R^2={:.2f}$".format(r_value ** 2),
+        ha="center",
+        va="center",
+        transform=ca.transAxes,
+        fontsize="xx-large",
+    )
+    # Location 3 is lower left corner.
+    plt.legend(frameon=False, loc=3)

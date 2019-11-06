@@ -278,6 +278,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     """
     classifiers = {
         DecisionTreeClassifier: {
+            "criterion": "gini",
             "random_state": random_state,
             "max_depth": 5,
             "class_weight": "balanced",

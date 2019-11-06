@@ -2,6 +2,7 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+import scipy as sp
 from sklearn.model_selection import train_test_split
 
 from source import (
@@ -65,14 +66,9 @@ def patient_allele_frequencies(
 
     # The columns that were passed must actually exist.
     column_names = data_frame.columns
-    if (
-        allele_columns[0] not in column_names
-        or allele_columns[1] not in column_names
-    ):
+    if allele_columns[0] not in column_names or allele_columns[1] not in column_names:
         raise KeyError(
-            "Column lookup error in `allel_freq_columns` = {}.".format(
-                allele_columns
-            )
+            "Column lookup error in `allel_freq_columns` = {}.".format(allele_columns)
         )
 
     # There may not be any NA values in the columns.
@@ -282,10 +278,28 @@ def load_process_and_store_spreadsheets(
     X.dropna(subset=["response_grouped"], inplace=True)
 
     f_test = 0.3
-    X_train, X_test = train_test_split(
-        X, test_size=f_test, random_state=random_state
-    )
+    X_train, X_test = train_test_split(X, test_size=f_test, random_state=random_state)
     # Write data to disk.
     X.to_csv(all_filename, sep="\t")
     X_train.to_csv(train_filename, sep="\t")
     X_test.to_csv(test_filename, sep="\t")
+
+
+def survival_histograms(y):
+    y_range = (0.0, 1.5 * max(y))
+    # Histogram of patients.
+    p, edges = np.histogram(y, range=y_range, bins=10)
+    t = (edges[:-1] + edges[1:]) / 2.0
+
+    # Cumulative histogram.
+    res = sp.stats.cumfreq(y, numbins=15, defaultreallimits=(0.0, max(y)))
+    t_cum = res.lowerlimit + np.linspace(
+        0, res.binsize * res.cumcount.size, res.cumcount.size
+    )
+    n_survive = len(y) - res.cumcount
+
+    # Remove last element which contains 0 survivors.
+    t_cum = t_cum[:-1]
+    n_survive = n_survive[:-1]
+
+    return ((t, p), (t_cum, n_survive))
