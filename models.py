@@ -8,6 +8,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import OrdinalEncoder
 
 from const import target_genes
+from utils import get_categorical_columns
 
 
 class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
@@ -120,7 +121,7 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
             self.model = embedding_model
 
         if remainder not in ("ignore", "drop", "fail"):
-            raise ValueError(f"Unknown action for unknown_columns {unknown_columns}.")
+            raise ValueError(f"Unknown action for remainder={remainder}.")
         self.unknown_columns_ = remainder
 
     def fit(self, X: pd.DataFrame, y=None):
@@ -173,3 +174,52 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
 
         # Otherwise just drop all other columns (= keep only transformed colums).
         return pd.DataFrame(X_T)
+
+
+class MergeRareCategories(BaseEstimator, TransformerMixin):
+    """
+    Merge categories occuring equal or less than `thresshold` times.
+    """
+
+    def __init__(self, thresshold: int = 30):
+        self.thresshold_ = thresshold
+
+    def fit(self, X: pd.DataFrame, y=None):
+        """
+        Look for categories to merge.
+        """
+        if not isinstance(X, pd.DataFrame):
+            raise TypeError("X must be Pandas data frame.")
+
+        # Keep track of categories, per column, that are to be merged.
+        self.categories_to_merge_ = {}
+
+        # Go through all the categorical columns.
+        for column in get_categorical_columns(X):
+            for category in X[column].unique():
+                # Check that each category occurs at least `thresshold` times.
+                constraint = X[column] == category
+                if len(X[constraint]) <= self.thresshold_:
+                    # Add category to the merge list.
+                    if column not in self.categories_to_merge_:
+                        self.categories_to_merge_[column] = [category]
+                    else:
+                        self.categories_to_merge_[column].append(category)
+
+        return self
+
+    def transform(self, X: pd.DataFrame, y=None):
+        """
+        Merge the categories.
+
+        Merge policy: group all categories below the thresshold into one new (composite)
+        category.
+        """
+        for column, category_list in self.categories_to_merge_.items():
+            new_category_name = "+".join(category_list)
+            # Replace all of the cells belonging to any of the below-thresshold
+            # categories with the new composite category.
+            constraint = X[column].isin(category_list)
+            X[column][constraint] = new_category_name
+
+        return X

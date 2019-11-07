@@ -5,7 +5,12 @@ import numpy as np
 import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
 
-from models import ClassifierAsTransformer, UniqueFeatureFilter, Gene2Vec
+from models import (
+    ClassifierAsTransformer,
+    Gene2Vec,
+    MergeRareCategories,
+    UniqueFeatureFilter,
+)
 
 
 class TestUniqueFeatureFilter(unittest.TestCase):
@@ -87,3 +92,39 @@ class TestGene2Vec(unittest.TestCase):
             X
         )
         self.assertEqual(X_embed2.shape[1], 200)
+
+
+class TestMergeRareCategories(unittest.TestCase):
+    def setUp(self):
+        self.data_frame = pd.DataFrame(
+            {"a": ["a1", "a2", "a1", "a2", "a1", "a3", "a4", "a4"], "b": ["a", "b"] * 4}
+        )
+
+    def test_fit(self):
+        """
+        Check that correct categories are singled out.
+        """
+        merger = MergeRareCategories(thresshold=2)
+        merger.fit(self.data_frame)
+        self.assertEqual(tuple(merger.categories_to_merge_.keys()), ("a",))
+        self.assertEqual(set(merger.categories_to_merge_["a"]), {"a2", "a3", "a4"})
+
+    def test_transform(self):
+        """
+        Check that cells are correctly substituted.
+        """
+        np.testing.assert_array_equal(
+            np.array(
+                [
+                    ["a1", "a"],
+                    ["a2+a3+a4", "b"],
+                    ["a1", "a"],
+                    ["a2+a3+a4", "b"],
+                    ["a1", "a"],
+                    ["a2+a3+a4", "b"],
+                    ["a2+a3+a4", "a"],
+                    ["a2+a3+a4", "b"],
+                ]
+            ),
+            MergeRareCategories(thresshold=2).fit_transform(self.data_frame),
+        )

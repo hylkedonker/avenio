@@ -15,6 +15,7 @@ from sklearn.ensemble import (
 from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.linear_model import LogisticRegression, ElasticNet, LinearRegression
 from sklearn.metrics import accuracy_score
+from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
@@ -289,6 +290,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "max_depth": 5,
             "class_weight": "balanced_subsample",
         },
+        GaussianNB: {},
         GradientBoostingClassifier: {"random_state": random_state, "n_estimators": 15},
         KNeighborsClassifier: {"n_neighbors": 2, "weights": "distance"},
         LogisticRegression: {

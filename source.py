@@ -3,6 +3,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+from utils import get_categorical_columns
+
 
 RANDOM_STATE = 1234
 np.random.seed(RANDOM_STATE)
@@ -43,13 +45,8 @@ def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
     Convert all text columns to lower case.
     """
     df = data_frame.copy()
-    for column in data_frame.columns:
-        # This is a dirty way to check if it is non-numeric, but pandas thinks
-        # all the columns are strings.
-        try:
-            float(data_frame[column].iloc[0])
-        except ValueError:
-            df[column] = data_frame[column].str.lower()
+    for column in get_categorical_columns(df):
+        df[column] = df[column].str.lower()
 
     return df
 
@@ -71,9 +68,7 @@ def load_avenio_files(
         pd.read_excel(spread_sheet_filename, sheet_name=1).dropna().iloc[:, 2]
     )
     # Identify patients for which with missing sequencing data.
-    no_mutation_patient_spss = phenotypes[phenotypes["VAR00001"].isna()][
-        "studynumber"
-    ]
+    no_mutation_patient_spss = phenotypes[phenotypes["VAR00001"].isna()]["studynumber"]
     # The mutation spreadsheet doesn't have all the data yet, so it must be a
     # subset of all the patients.
     assert set(no_mutation_found_patients).issubset(no_mutation_patient_spss)
