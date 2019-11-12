@@ -3,6 +3,7 @@ from typing import Callable
 from category_encoders import CatBoostEncoder
 from catboost import CatBoostClassifier
 import pandas as pd
+from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import (
     GradientBoostingClassifier,
@@ -73,7 +74,7 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     no_phenotype_columns = [
         column for column in X.columns if column not in phenotype_features
     ]
-    return X[no_phenotype_columns]
+    return X[no_phenotype_columns].copy()
 
 
 def drop_specific_phenotypes(X: pd.DataFrame) -> pd.DataFrame:
@@ -131,7 +132,7 @@ def pipeline_Julian(Estimator, **kwargs):
                 "select_columns",
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
-            ("filter_rare_mutations", UniqueFeatureFilter(thresshold=5)),
+            ("filter_rare_mutations", UniqueFeatureFilter(thresshold=6)),
             ("classify", Estimator(**kwargs)),
         ]
     )
@@ -218,7 +219,23 @@ def pipeline_Pyotr(Estimator, **kwargs):
     return p_Kapitsa
 
 
-def hybrid_classifier(random_state: int = 1234):
+def hybrid_regressor(random_state: int = 1234) -> BaseEstimator:
+    net_kwargs = {
+        "random_state": random_state,
+        "l1_ratio": 0.75,
+        "alpha": 1.0,
+        "max_iter": 1000,
+    }
+    tree_kwargs = {"random_state": random_state, "max_depth": 4}
+    return VotingRegressor(
+        estimators=[
+            ("phenotype", pipeline_Richard(ElasticNet, **net_kwargs)),
+            ("genetics", pipeline_Julian(DecisionTreeRegressor, **tree_kwargs)),
+        ]
+    )
+
+
+def hybrid_classifier(random_state: int = 1234) -> BaseEstimator:
     log_kwargs = {
         "random_state": random_state,
         "penalty": "elasticnet",
@@ -227,13 +244,18 @@ def hybrid_classifier(random_state: int = 1234):
         "l1_ratio": 0.75,
         "C": 0.5,
     }
-    tree_kwargs = {"random_state": random_state, "max_depth": 4}
+    tree_kwargs = {
+        "criterion": "gini",
+        "random_state": random_state,
+        "max_depth": 5,
+        "class_weight": "balanced",
+    }
+
     return VotingClassifier(
         estimators=[
             ("phenotype", pipeline_Richard(LogisticRegression, **log_kwargs)),
             ("genetics", pipeline_Julian(DecisionTreeClassifier, **tree_kwargs)),
-        ],
-        # voting="soft",
+        ]
     )
 
 
