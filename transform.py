@@ -285,14 +285,14 @@ def load_process_and_store_spreadsheets(
     X_test.to_csv(test_filename, sep="\t")
 
 
-def survival_histograms(y):
-    y_range = (0.0, 1.5 * max(y))
+def survival_histograms(y, hist_bins: int = 10, cum_hist_bins: int = 15):
+    y_range = (0.0, 1.25 * max(y))
     # Histogram of patients.
-    p, edges = np.histogram(y, range=y_range, bins=10)
+    p, edges = np.histogram(y, range=y_range, bins=hist_bins)
     t = (edges[:-1] + edges[1:]) / 2.0
 
     # Cumulative histogram.
-    res = sp.stats.cumfreq(y, numbins=15, defaultreallimits=(0.0, max(y)))
+    res = sp.stats.cumfreq(y, numbins=cum_hist_bins, defaultreallimits=(0.0, max(y)))
     t_cum = res.lowerlimit + np.linspace(
         0, res.binsize * res.cumcount.size, res.cumcount.size
     )

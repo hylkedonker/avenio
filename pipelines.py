@@ -23,7 +23,7 @@ from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from source import phenotype_features
-from models import Gene2Vec, UniqueFeatureFilter
+from models import Gene2Vec, MergeRareCategories, UniqueFeatureFilter
 
 
 # From those listed above, the following columns are categorical (not counting
@@ -44,14 +44,15 @@ categorical_input_columns = [
 ]
 
 phenotypes_to_drop = [
-    # "Systemischetherapie",
+    "Systemischetherapie",
     # "histology_grouped",
     # "lymfmeta",
-    # "brainmeta",
-    # "adrenalmeta",
+    "brainmeta",
+    "adrenalmeta",
     # "livermeta",
-    # "lungmeta",
-    # "skeletonmeta",
+    "therapyline",
+    "lungmeta",
+    "skeletonmeta",
 ]
 
 
@@ -61,7 +62,7 @@ def select_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     """
     # The following list does not contain phenotypes that are not in `X`.
     phenotype_columns = [column for column in X.columns if column in phenotype_features]
-    return X[phenotype_columns]
+    return X[phenotype_columns].copy()
 
 
 def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
@@ -87,18 +88,13 @@ def pipeline_Richard(Estimator, **kwargs):
     # A simple one-hot-encoder seems to work best (as opposed to more fancy
     # catboost encoder).
     # category_preprocess = CatBoostEncoder(cols=categorical_input_columns)
+    columns_to_encode = [
+        column
+        for column in categorical_input_columns
+        if column not in phenotypes_to_drop
+    ]
     category_preprocess = ColumnTransformer(
-        [
-            (
-                "LabelEncoder",
-                OneHotEncoder(handle_unknown="ignore"),
-                [
-                    column
-                    for column in categorical_input_columns
-                    if column not in phenotypes_to_drop
-                ],
-            )
-        ],
+        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
         remainder="passthrough",
     )
     # Phenotype-only pipeline Richard.
@@ -107,6 +103,12 @@ def pipeline_Richard(Estimator, **kwargs):
             (
                 "select_columns",
                 FunctionTransformer(select_phenotype_columns, validate=False),
+            ),
+            (
+                "category_grouper",
+                MergeRareCategories(
+                    categorical_columns=categorical_input_columns, thresshold=30
+                ),
             ),
             (
                 "remove_specific_phenotypes",
@@ -154,6 +156,12 @@ def pipeline_Freeman(Estimator, **kwargs):
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
         steps=[
+            # (
+            #     "category_grouper",
+            #     MergeRareCategories(
+            #         categorical_columns=categorical_input_columns, thresshold=30
+            #     ),
+            # ),
             ("transform_columns", all_categorical_columns_transformer),
             ("classify", Estimator(**kwargs)),
         ]
@@ -168,6 +176,12 @@ def pipeline_Nikolay(Estimator, **kwargs):
     p_Bogolyubov = Pipeline(
         steps=[
             ("vectorise_mutations", Gene2Vec(remainder="drop")),
+            (
+                "category_grouper",
+                MergeRareCategories(
+                    categorical_columns=categorical_input_columns, thresshold=30
+                ),
+            ),
             ("classify", Estimator(**kwargs)),
         ]
     )
@@ -191,6 +205,12 @@ def pipeline_Pyotr(Estimator, **kwargs):
     p_Kapitsa = Pipeline(
         steps=[
             ("vectorise_mutations", Gene2Vec(remainder="ignore")),
+            (
+                "category_grouper",
+                MergeRareCategories(
+                    categorical_columns=categorical_input_columns, thresshold=30
+                ),
+            ),
             ("transform_categories", all_categorical_columns_transformer),
             ("classify", Estimator(**kwargs)),
         ]

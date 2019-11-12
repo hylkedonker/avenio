@@ -97,34 +97,71 @@ class TestGene2Vec(unittest.TestCase):
 class TestMergeRareCategories(unittest.TestCase):
     def setUp(self):
         self.data_frame = pd.DataFrame(
-            {"a": ["a1", "a2", "a1", "a2", "a1", "a3", "a4", "a4"], "b": ["a", "b"] * 4}
+            {
+                "a": ["a1", "a2", "a1", "a2", "a1", "a3", "a4", "a4"],
+                "b": ["a", "b"] * 4,
+                # By default, not picked up as being categorical data.
+                "c": ["1", "2", "1", "2", "1", "3", "4", "4"],
+            }
         )
 
     def test_fit(self):
         """
         Check that correct categories are singled out.
         """
-        merger = MergeRareCategories(thresshold=2)
-        merger.fit(self.data_frame)
+        # Check that an error is raised when non-categorical data is fed.
+        numerical_data_frame = pd.DataFrame({"a": range(10)}).T
+        with self.assertRaises(KeyError):
+            MergeRareCategories(categorical_columns=["a"]).fit(numerical_data_frame)
+
+        merger = MergeRareCategories(thresshold=2).fit(self.data_frame)
         self.assertEqual(tuple(merger.categories_to_merge_.keys()), ("a",))
         self.assertEqual(set(merger.categories_to_merge_["a"]), {"a2", "a3", "a4"})
+
+        # Merge only column "c".
+        specific_cat_merger = MergeRareCategories(
+            thresshold=2, categorical_columns=["c"]
+        ).fit(self.data_frame)
+        self.assertEqual(tuple(specific_cat_merger.categories_to_merge_.keys()), ("c",))
+        self.assertEqual(
+            set(specific_cat_merger.categories_to_merge_["c"]), {"2", "3", "4"}
+        )
 
     def test_transform(self):
         """
         Check that cells are correctly substituted.
         """
+        # Test merge only "c".
+        merger = MergeRareCategories(thresshold=2, categorical_columns=["c"])
+        data_frame_transformed = merger.fit_transform(self.data_frame.copy())
+        # Test that column "c" is correctly transformed.
+        np.testing.assert_array_equal(
+            np.array(["1", "2+3+4", "1", "2+3+4", "1", "2+3+4", "2+3+4", "2+3+4"]),
+            data_frame_transformed["c"],
+        )
+        # Check that the remaining columns have been left untouched.
+        np.testing.assert_array_equal(
+            data_frame_transformed.iloc[:, :2], self.data_frame.iloc[:, :2]
+        )
+
+        # Let the transformer guess all categorical data (i.e., columns with non-numeric
+        # data).
+        default_cats_transformed = MergeRareCategories(thresshold=2).fit_transform(
+            self.data_frame
+        )
+
         np.testing.assert_array_equal(
             np.array(
                 [
-                    ["a1", "a"],
-                    ["a2+a3+a4", "b"],
-                    ["a1", "a"],
-                    ["a2+a3+a4", "b"],
-                    ["a1", "a"],
-                    ["a2+a3+a4", "b"],
-                    ["a2+a3+a4", "a"],
-                    ["a2+a3+a4", "b"],
+                    ["a1", "a", "1"],
+                    ["a2+a3+a4", "b", "2"],
+                    ["a1", "a", "1"],
+                    ["a2+a3+a4", "b", "2"],
+                    ["a1", "a", "1"],
+                    ["a2+a3+a4", "b", "3"],
+                    ["a2+a3+a4", "a", "4"],
+                    ["a2+a3+a4", "b", "4"],
                 ]
             ),
-            MergeRareCategories(thresshold=2).fit_transform(self.data_frame),
+            default_cats_transformed,
         )

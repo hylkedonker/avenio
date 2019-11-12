@@ -4,11 +4,14 @@ from typing import Iterable
 import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
+import pandas as pd
 import scipy as sp
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
+
+from fit import categorical_signal, fit_categorical_survival
 
 matplotlib.rc("font", size=22)
 matplotlib.rc("lines", linewidth=4)
@@ -138,3 +141,25 @@ def view_as_exponential(t, p, outlier_indices=[]):
     )
     # Location 3 is lower left corner.
     plt.legend(frameon=False, loc=3)
+
+
+def categorical_signal_summary(
+    X: pd.DataFrame, y: pd.Series, categorical_columns: list
+) -> pd.DataFrame:
+    """
+    Make a summary of all categorical effects.
+    """
+    summary = pd.DataFrame()
+
+    for category in categorical_columns:
+        # Calculate survival statistics for given prior information.
+        df = fit_categorical_survival(X[category], y)
+        # Calculate signal.
+        s = categorical_signal(df)
+        # Add results to summary.
+        s["item"] = s.index
+        s["category"] = category
+        # Add results to summary.
+        summary = summary.append(s, ignore_index=True)
+
+    return summary.set_index(["category", "item"])

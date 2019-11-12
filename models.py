@@ -35,7 +35,7 @@ class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
         """
         Chuck out columns below thresshold.
         """
-        return X[self.columns_to_keep]
+        return X[self.columns_to_keep].copy()
 
 
 class CustomCatBoostClassifier(CatBoostClassifier):
@@ -173,7 +173,7 @@ class Gene2Vec(BaseEstimator, TransformerMixin):
                 )
 
         # Otherwise just drop all other columns (= keep only transformed colums).
-        return pd.DataFrame(X_T)
+        return pd.DataFrame(X_T).copy()
 
 
 class MergeRareCategories(BaseEstimator, TransformerMixin):
@@ -181,8 +181,28 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
     Merge categories occuring equal or less than `thresshold` times.
     """
 
-    def __init__(self, thresshold: int = 30):
+    def __init__(
+        self, categorical_columns: Optional[list] = None, thresshold: int = 30
+    ):
+        """
+        Merge columns in `categorical_columns` occuring less than `thresshold`.
+
+        Args:
+            categorical_columns (list): Carry out transformation on all non-numeric
+                columns when None are provided.
+        """
         self.thresshold_ = thresshold
+
+        if not self.thresshold_:
+            raise ValueError("No thresshold!")
+
+        self.categorical_columns_ = categorical_columns
+
+    def get_params(self, deep: bool = True):
+        return {
+            "thresshold": self.thresshold_,
+            "categorical_columns": self.categorical_columns_,
+        }
 
     def fit(self, X: pd.DataFrame, y=None):
         """
@@ -194,17 +214,38 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         # Keep track of categories, per column, that are to be merged.
         self.categories_to_merge_ = {}
 
+        # Use non-numeric columns when None were provided.
+        if not self.categorical_columns_:
+            self.categorical_columns_ = get_categorical_columns(X)
+
         # Go through all the categorical columns.
-        for column in get_categorical_columns(X):
+        for column in self.categorical_columns_:
+            if len(X[column].unique()) >= 0.8 * len(X[column]):
+                raise KeyError(
+                    (
+                        r"More than 80 % of values in column `{}` are unique! Probably "
+                        "not a categorical column."
+                    ).format(column)
+                )
+
             for category in X[column].unique():
                 # Check that each category occurs at least `thresshold` times.
                 constraint = X[column] == category
+
                 if len(X[constraint]) <= self.thresshold_:
                     # Add category to the merge list.
                     if column not in self.categories_to_merge_:
                         self.categories_to_merge_[column] = [category]
                     else:
                         self.categories_to_merge_[column].append(category)
+
+            # At least two categories are needed to merge. Don't carry out a trivial
+            # transformation for one column.
+            if (
+                column in self.categories_to_merge_
+                and len(self.categories_to_merge_[column]) == 1
+            ):
+                del self.categories_to_merge_[column]
 
         return self
 
@@ -216,10 +257,11 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         category.
         """
         for column, category_list in self.categories_to_merge_.items():
-            new_category_name = "+".join(category_list)
+            new_category_name = "+".join(str(cat) for cat in category_list)
             # Replace all of the cells belonging to any of the below-thresshold
             # categories with the new composite category.
             constraint = X[column].isin(category_list)
-            X[column][constraint] = new_category_name
+            X.loc[constraint, column] = new_category_name
+            X[column] = X[column].astype(str)
 
-        return X
+        return X.copy()

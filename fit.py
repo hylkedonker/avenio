@@ -26,14 +26,14 @@ def fit_categorical_survival(
         plot = None
 
     # Store result in DataFrame.
-    columns = ["tau", "sigma_t", "r"]
+    columns = ["tau", "sigma_t", "n", "r"]
     df = pd.DataFrame(index=list(x.unique()).append("all"), columns=columns)
 
     # 1) First do a fit for the data combined.
     # Calculate a histogram and cumulative histogram of the survival data.
     _, (t_cum, p_cum) = survival_histograms(y)
     tau, r = fit_half_life(t_cum, p_cum)
-    df.loc["all", columns] = tau, np.std(y), r
+    df.loc["all", columns] = tau, np.std(y), len(y), r
 
     # 2) Repeat, but now for every category.
     for category in x.unique():
@@ -44,7 +44,7 @@ def fit_categorical_survival(
         (t, p), (t_cum, p_cum) = survival_histograms(y_category)
         tau, r = fit_half_life(t_cum, p_cum)
 
-        df.loc[category, columns] = tau, np.std(y_category), r
+        df.loc[category, columns] = tau, np.std(y_category), len(y_category), r
         if plot:
             if plot == "pdf":
                 plt.plot(t, p, label=category)
@@ -53,6 +53,7 @@ def fit_categorical_survival(
 
     if plot:
         plt.legend(frameon=False)
+        plt.tight_layout()
 
     return df
 
@@ -72,7 +73,7 @@ def categorical_signal(X: pd.DataFrame) -> pd.DataFrame:
             # Amount of signal.
             s = np.abs(X.loc[row_i, "tau"] - X.loc[row_j, "tau"])
             a[f"{row_i}-{row_j}"] = {
-                "signal": s,
+                "delta tau": s,
                 "signal to noise": s / combined_fit["sigma_t"],
             }
     return pd.DataFrame(a).T
