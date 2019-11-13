@@ -51,6 +51,7 @@ phenotypes_to_drop = [
     "brainmeta",
     "adrenalmeta",
     # "livermeta",
+    "stage",
     "therapyline",
     "lungmeta",
     "skeletonmeta",
@@ -389,3 +390,37 @@ def benchmark_pipelines(
                 y_test, y_test_pred, **metric_kwargs
             )
     return pd.DataFrame(benchmark_result).T
+
+
+def calculate_pass_through_column_names_Richard():
+    """
+    Determine the column names that pass unaltered through the Richard pipeline.
+    """
+    return [
+        column
+        for column in phenotype_features
+        if column not in categorical_input_columns
+        if column not in phenotypes_to_drop
+    ]
+
+
+def reconstruct_categorical_variable_names_Richard(pipeline):
+    """
+    Determine the column names of the input columns entering Richard's classifier.
+    """
+    # Take the transformer right before the classifier.
+    column_transformer = pipeline.steps[-2][1]
+    # Consistency check: The column transformer should only contain the one hot encoder.
+    assert len(column_transformer.transformers_) == 2
+    # Get the column names that are transformed.
+    columns = column_transformer.transformers_[0][2]
+    hot_encoder = column_transformer.transformers_[0][1]
+    # And generate the feature names.
+    names = list(hot_encoder.get_feature_names(input_features=columns))
+
+    # Make the names prettier.
+    names = [name.replace("_", ": ") for name in names]
+
+    # Concatenate with unaltered phenotype columns.
+    names.extend(calculate_pass_through_column_names_Richard())
+    return names

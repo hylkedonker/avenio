@@ -27,7 +27,7 @@ class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
         non_zero_values = X[X != 0]
         # Pick columns that have at least `thresshold` occurences.
         above_thresshold = non_zero_values.count() >= self.thresshold
-        self.columns_to_keep = above_thresshold.index[above_thresshold].values
+        self.columns_to_keep_ = above_thresshold.index[above_thresshold].values
 
         return self
 
@@ -35,7 +35,7 @@ class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
         """
         Chuck out columns below thresshold.
         """
-        return X[self.columns_to_keep].copy()
+        return X[self.columns_to_keep_].copy()
 
 
 class CustomCatBoostClassifier(CatBoostClassifier):

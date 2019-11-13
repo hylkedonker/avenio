@@ -25,7 +25,7 @@ class TestUniqueFeatureFilter(unittest.TestCase):
         f = UniqueFeatureFilter(thresshold=2)
         f.fit(X)
         # Check that correct columns are filtered.
-        self.assertEqual(set(f.columns_to_keep), {"a", "c"})
+        self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
         # Test that array is correctly transformed.
         np.testing.assert_array_equal(f.transform(X), X[["a", "c"]])
 

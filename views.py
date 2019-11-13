@@ -1,6 +1,7 @@
 from copy import copy
 from typing import Iterable
 
+import graphviz
 import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
@@ -10,8 +11,11 @@ import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier, export_graphviz
 
 from fit import categorical_signal, fit_categorical_survival
+from models import UniqueFeatureFilter
+from pipelines import reconstruct_categorical_variable_names_Richard
 
 matplotlib.rc("font", size=22)
 matplotlib.rc("lines", linewidth=4)
@@ -163,3 +167,38 @@ def categorical_signal_summary(
         summary = summary.append(s, ignore_index=True)
 
     return summary.set_index(["category", "item"])
+
+
+def view_linear_model_richard(pipeline):
+    """
+    Plot the coefficients of Richard model.
+    """
+    richard_classifier = pipeline.steps[-1][1]
+    variable_names = reconstruct_categorical_variable_names_Richard(pipeline)
+    with sns.plotting_context(font_scale=1.5):
+        plt.figure(figsize=(14, 6))
+        plt.xlabel(r"$t$ (days)")
+        sns.barplot(y=variable_names, x=richard_classifier.coef_, label="large")
+        plt.tight_layout()
+
+
+def view_decision_tree_julian(pipeline):
+    """
+    Plot the decision tree of a Julian pipeline.
+    """
+    tree_classifier = pipeline.steps[-1][1]
+    # Consistency check of the Julian pipeline.
+    assert isinstance(pipeline.steps[-2][1], UniqueFeatureFilter)
+
+    kwargs = {
+        "out_file": None,
+        "filled": True,
+        "impurity": None,
+        "proportion": True,
+        "feature_names": pipeline.steps[-2][1].columns_to_keep_,
+    }
+    if isinstance(tree_classifier, DecisionTreeClassifier):
+        kwargs["class_names"] = tree_classifier.classes_
+
+    dot_data = export_graphviz(tree_classifier, **kwargs)
+    return graphviz.Source(dot_data)
