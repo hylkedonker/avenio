@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import OrdinalEncoder
+from sklearn.utils import safe_indexing, safe_mask
 
 from const import target_genes
 from utils import get_categorical_columns
@@ -13,7 +14,7 @@ from utils import get_categorical_columns
 
 class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
     """
-    Filter out features that are non-zero more often than a given thresshold.
+    Filter out features that are non-zero less than a given thresshold.
     """
 
     def __init__(self, thresshold: int = 5):
@@ -24,10 +25,17 @@ class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
         Find columns with at least `threshold` non-zero values.
         """
         # What elements are non-zero?
-        non_zero_values = X[X != 0]
+        non_zero_values = safe_mask(X, X != 0)
+
         # Pick columns that have at least `thresshold` occurences.
-        above_thresshold = non_zero_values.count() >= self.thresshold
-        self.columns_to_keep_ = above_thresshold.index[above_thresshold].values
+        above_thresshold = np.sum(non_zero_values, axis=0) >= self.thresshold
+
+        # Get column names if pandas.
+        if isinstance(X, pd.DataFrame):
+            self.columns_to_keep_ = X.columns[above_thresshold].values
+        # Otherwise the indices.
+        else:
+            self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
 
         return self
 
@@ -35,7 +43,9 @@ class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
         """
         Chuck out columns below thresshold.
         """
-        return X[self.columns_to_keep_].copy()
+        if isinstance(X, pd.DataFrame):
+            return X[self.columns_to_keep_]
+        return X[:, self.columns_to_keep_]
 
 
 class CustomCatBoostClassifier(CatBoostClassifier):
