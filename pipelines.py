@@ -19,7 +19,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
+from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, OneHotEncoder
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
@@ -42,6 +42,50 @@ categorical_input_columns = [
     "livermeta",
     "lungmeta",
     "skeletonmeta",
+]
+mutation_columns = [
+    "TP53",
+    "KRAS",
+    "FGFR1",
+    "PTEN",
+    "FBXW7",
+    "KDR",
+    "MTOR",
+    "EGFR",
+    "MET",
+    "CDKN2A",
+    "BRAF",
+    "APC",
+    "KEAP1",
+    "ALK",
+    "AR",
+    "ERBB2",
+    "NRAS",
+    "NFE2L2",
+    "TSC2",
+    "GNAS",
+    "STK11",
+    "CD274",
+    "CTNNB1",
+    "MAP2K2",
+    "IDH1",
+    "NF2",
+    "MAP2K1",
+    "PIK3CA",
+    "IDH2",
+    "FLT4",
+    "ESR1",
+    "DDR2",
+    "KIT",
+    "PTCH1",
+    "SMAD4",
+    "SMO",
+    "RNF43",
+    "FGFR2",
+    "JAK2",
+    "CCND1",
+    "GATA3",
+    "PDGFRA",
 ]
 
 phenotypes_to_drop = [
@@ -133,6 +177,13 @@ def pipeline_Julian(Estimator, **kwargs):
                 "select_columns",
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
+            (
+                "scaler",
+                ColumnTransformer(
+                    [("mutation_scaler", MinMaxScaler(), mutation_columns)],
+                    remainder="passthrough",
+                ),
+            ),
             ("filter_rare_mutations", UniqueFeatureFilter(thresshold=6)),
             ("classify", Estimator(**kwargs)),
         ]
@@ -150,7 +201,8 @@ def pipeline_Freeman(Estimator, **kwargs):
                 "LabelEncoder",
                 OneHotEncoder(handle_unknown="ignore"),
                 categorical_input_columns,
-            )
+            ),
+            ("mutation_scaler", MinMaxScaler(), mutation_columns),
         ],
         remainder="passthrough",
     )

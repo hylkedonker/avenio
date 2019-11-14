@@ -14,9 +14,9 @@ from models import (
 
 
 class TestUniqueFeatureFilter(unittest.TestCase):
-    def test_filter(self):
+    def test_filter_pandas(self):
         """
-        Test thessholding feature filter.
+        Test thessholding feature filter when input is pandas Dataframe..
         """
         X = pd.DataFrame(
             np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T,
@@ -28,6 +28,14 @@ class TestUniqueFeatureFilter(unittest.TestCase):
         self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
         # Test that array is correctly transformed.
         np.testing.assert_array_equal(f.transform(X), X[["a", "c"]])
+
+    def test_filter_numpy(self):
+        """
+        Test thressholding feature filter when input is numpy array.
+        """
+        X = np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]])
+        f = UniqueFeatureFilter(thresshold=2)
+        f.fit(X)
 
 
 class TestClassifierAsTransformer(unittest.TestCase):

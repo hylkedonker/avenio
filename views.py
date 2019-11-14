@@ -193,6 +193,7 @@ def view_decision_tree_julian(pipeline):
     kwargs = {
         "out_file": None,
         "filled": True,
+        "rounded": True,
         "impurity": None,
         "proportion": True,
         "feature_names": pipeline.steps[-2][1].columns_to_keep_,
