@@ -9,11 +9,11 @@ from models import (
     ClassifierAsTransformer,
     Gene2Vec,
     MergeRareCategories,
-    UniqueFeatureFilter,
+    SparseFeatureFilter,
 )
 
 
-class TestUniqueFeatureFilter(unittest.TestCase):
+class TestSparseFeatureFilter(unittest.TestCase):
     def test_filter_pandas(self):
         """
         Test thessholding feature filter when input is pandas Dataframe.
@@ -22,7 +22,7 @@ class TestUniqueFeatureFilter(unittest.TestCase):
             np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T,
             columns=["a", "b", "c"],
         )
-        f = UniqueFeatureFilter(thresshold=2)
+        f = SparseFeatureFilter(thresshold=2)
         f.fit(X)
         # Check that correct columns are filtered.
         self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
@@ -34,7 +34,7 @@ class TestUniqueFeatureFilter(unittest.TestCase):
         Test thressholding feature filter when input is numpy array.
         """
         X = np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T
-        f = UniqueFeatureFilter(thresshold=2)
+        f = SparseFeatureFilter(thresshold=2)
 
         f.fit(X)
         self.assertEqual(set(f.columns_to_keep_), {0, 2})

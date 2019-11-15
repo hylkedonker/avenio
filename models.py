@@ -12,7 +12,7 @@ from const import target_genes
 from utils import get_categorical_columns
 
 
-class UniqueFeatureFilter(BaseEstimator, TransformerMixin):
+class SparseFeatureFilter(BaseEstimator, TransformerMixin):
     """
     Filter out features that are non-zero less than a given thresshold.
     """

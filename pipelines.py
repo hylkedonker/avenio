@@ -5,6 +5,7 @@ from catboost import CatBoostClassifier
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
+from sklearn.decomposition import PCA
 from sklearn.ensemble import (
     GradientBoostingClassifier,
     GradientBoostingRegressor,
@@ -18,14 +19,17 @@ from sklearn.linear_model import LogisticRegression, ElasticNet, LinearRegressio
 from sklearn.metrics import accuracy_score
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, MinMaxScaler, OneHotEncoder
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from source import phenotype_features
-from models import Gene2Vec, MergeRareCategories, UniqueFeatureFilter
+from models import Gene2Vec, MergeRareCategories, SparseFeatureFilter
 
+
+RANDOM_STATE = 1234
 
 # From those listed above, the following columns are categorical (not counting
 # the labels).
@@ -143,6 +147,7 @@ def pipeline_Richard(Estimator, **kwargs):
         [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
         remainder="passthrough",
     )
+
     # Phenotype-only pipeline Richard.
     p_Richard = Pipeline(
         steps=[
@@ -177,14 +182,7 @@ def pipeline_Julian(Estimator, **kwargs):
                 "select_columns",
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
-            (
-                "scaler",
-                ColumnTransformer(
-                    [("mutation_scaler", MinMaxScaler(), mutation_columns)],
-                    remainder="passthrough",
-                ),
-            ),
-            ("filter_rare_mutations", UniqueFeatureFilter(thresshold=6)),
+            ("filter_rare_mutations", SparseFeatureFilter(thresshold=6)),
             ("classify", Estimator(**kwargs)),
         ]
     )
@@ -201,8 +199,7 @@ def pipeline_Freeman(Estimator, **kwargs):
                 "LabelEncoder",
                 OneHotEncoder(handle_unknown="ignore"),
                 categorical_input_columns,
-            ),
-            ("mutation_scaler", MinMaxScaler(), mutation_columns),
+            )
         ],
         remainder="passthrough",
     )
@@ -210,12 +207,12 @@ def pipeline_Freeman(Estimator, **kwargs):
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
         steps=[
-            # (
-            #     "category_grouper",
-            #     MergeRareCategories(
-            #         categorical_columns=categorical_input_columns, thresshold=30
-            #     ),
-            # ),
+            (
+                "category_grouper",
+                MergeRareCategories(
+                    categorical_columns=categorical_input_columns, thresshold=30
+                ),
+            ),
             ("transform_columns", all_categorical_columns_transformer),
             ("classify", Estimator(**kwargs)),
         ]
@@ -378,6 +375,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "random_state": random_state,
             "max_depth": 5,
             "class_weight": "balanced",
+            "min_samples_leaf": 1,
         },
         RandomForestClassifier: {
             "random_state": random_state,
@@ -472,7 +470,4 @@ def reconstruct_categorical_variable_names_Richard(pipeline):
 
     # Make the names prettier.
     names = [name.replace("_", ": ") for name in names]
-
-    # Concatenate with unaltered phenotype columns.
-    names.extend(calculate_pass_through_column_names_Richard())
     return names
