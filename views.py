@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Iterable
+from typing import Iterable, Optional
 
 import graphviz
 import matplotlib
@@ -55,22 +55,29 @@ def plot_confusion_matrix(
     print(cm)
 
     fig, ax = plt.subplots()
+    plt.style.use("default")
     im = ax.imshow(cm, interpolation="nearest", cmap=cmap)
     ax.figure.colorbar(im, ax=ax)
+
+    yticks = np.arange(cm.shape[0])
+    xticks = np.arange(cm.shape[1])
+
     # We want to show all ticks...
     ax.set(
-        xticks=np.arange(cm.shape[1]),
-        yticks=np.arange(cm.shape[0]),
+        xticks=xticks,
+        yticks=yticks,
         # ... and label them with the respective list entries
         xticklabels=classes,
         yticklabels=classes,
         title=title,
-        ylabel="True label",
-        xlabel="Predicted label",
     )
 
+    ax.set_ylabel("True label", fontsize="x-large")
+    ax.set_xlabel("Predicted label", fontsize="x-large")
+    ax.set_xlim([xticks[0] - 0.5, xticks[-1] + 0.5])
+    ax.set_ylim([yticks[-1] + 0.5, yticks[0] - 0.5])
+    plt.setp(ax.get_xticklabels(), rotation=20, ha="right", rotation_mode="anchor")
     # Rotate the tick labels and set their alignment.
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
 
     # Loop over data dimensions and create text annotations.
     fmt = ".2f" if normalize else "d"
@@ -84,6 +91,7 @@ def plot_confusion_matrix(
                 ha="center",
                 va="center",
                 color="white" if cm[i, j] > thresh else "black",
+                fontsize="xx-large",
             )
     fig.tight_layout()
     return ax
@@ -186,7 +194,6 @@ def categorical_signal_summary(
     for category in categorical_columns:
         # Calculate survival statistics for given prior information.
         df = fit_categorical_survival(X[category], y)
-        print(df)
         # Calculate signal.
         s = categorical_signal(df)
         # Add results to summary.
@@ -247,7 +254,7 @@ def view_linear_model_julian(p_julian):
         plt.tight_layout()
 
 
-def view_decision_tree_julian(pipeline):
+def view_decision_tree_julian(pipeline, save_to: Optional[str] = None):
     """
     Plot the decision tree of a Julian pipeline.
     """
@@ -256,6 +263,7 @@ def view_decision_tree_julian(pipeline):
     assert isinstance(pipeline.steps[-2][1], SparseFeatureFilter)
 
     kwargs = {
+        "max_depth": 3,
         "out_file": None,
         "filled": True,
         "rounded": True,
@@ -267,4 +275,10 @@ def view_decision_tree_julian(pipeline):
         kwargs["class_names"] = tree_classifier.classes_
 
     dot_data = export_graphviz(tree_classifier, **kwargs)
-    return graphviz.Source(dot_data)
+    g = graphviz.Source(dot_data)
+
+    if save_to:
+        filename, extension = save_to.split(".")
+        g.render(filename, format=extension)
+
+    return g

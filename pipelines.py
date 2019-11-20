@@ -24,6 +24,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+import numpy as np
 
 from source import phenotype_features
 from models import Gene2Vec, MergeRareCategories, SparseFeatureFilter
@@ -471,3 +472,46 @@ def reconstruct_categorical_variable_names_Richard(pipeline):
     # Make the names prettier.
     names = [name.replace("_", ": ") for name in names]
     return names
+
+
+def evaluate_training_size_dependence(
+    pipeline,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.DataFrame,
+    metric: Callable = accuracy_score,
+    **metric_kwargs,
+):
+    """
+    Calculate model performance as a function of training size.
+    """
+    # Store training size and respective score in these variables.
+    sizes = []
+    scores = []
+
+    m = X_train.shape[0]
+
+    # Increase training size in multiples of `r`.
+    # 10 = m/r^n ==> n ln r = ln [m/10]
+    r = 1.5
+    n_max = int(np.floor(np.log(m / 10) / np.log(r)))
+
+    # We require `m_i` (number of records) to be at least 10.
+    for i in range(n_max):
+        n = n_max - i - 1
+        m_i = int(np.floor(m / r ** n))
+        # Save size.
+        sizes.append(m_i)
+
+        # Train model for reduced data set.
+        # p = pipeline.copy()
+        p = pipeline
+        X_train_slice, y_train_slice = X_train.iloc[:m_i], y_train.iloc[:m_i]
+        p.fit(X_train_slice, y_train_slice)
+
+        # Calculate and store metric on test set.
+        y_test_pred = p.predict(X_test)
+        scores.append(metric(y_test, y_test_pred, **metric_kwargs))
+
+    return np.array(sizes), np.array(scores)

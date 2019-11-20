@@ -192,7 +192,10 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
     """
 
     def __init__(
-        self, categorical_columns: Optional[list] = None, thresshold: int = 30
+        self,
+        categorical_columns: Optional[list] = None,
+        thresshold: int = 30,
+        unique_column: str = "raise",
     ):
         """
         Merge columns in `categorical_columns` occuring less than `thresshold`.
@@ -200,8 +203,11 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         Args:
             categorical_columns (list): Carry out transformation on all non-numeric
                 columns when None are provided.
+            unique_ (str): How to handle columns with more than 80 % unique
+                values. Posibble values: {"raise", "ignore"}.
         """
         self.thresshold_ = thresshold
+        self.unique_column_ = unique_column
 
         if not self.thresshold_:
             raise ValueError("No thresshold!")
@@ -231,12 +237,15 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         # Go through all the categorical columns.
         for column in self.categorical_columns_:
             if len(X[column].unique()) >= 0.8 * len(X[column]):
-                raise KeyError(
-                    (
-                        r"More than 80 % of values in column `{}` are unique! Probably "
-                        "not a categorical column."
-                    ).format(column)
-                )
+                # Raise error if there are too many unique categories (probably numeric
+                # column).
+                if self.unique_column_.lower() != "ignore":
+                    raise KeyError(
+                        (
+                            r"More than 80 % of values in column `{}` are unique! "
+                            "Probably not a categorical column."
+                        ).format(column)
+                    )
 
             for category in X[column].unique():
                 # Check that each category occurs at least `thresshold` times.
