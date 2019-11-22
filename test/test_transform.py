@@ -78,9 +78,7 @@ class TestTransforms(unittest.TestCase):
         with self.assertRaises(ValueError):
             mutation_copy = self.mutations.copy()
             mutation_copy.iloc[0, 0] = None
-            patient_allele_frequencies(
-                mutation_copy, gene_vocabulary=self.all_genes
-            )
+            patient_allele_frequencies(mutation_copy, gene_vocabulary=self.all_genes)
 
     def test_patient_allele_frequencies_values(self):
         """
@@ -206,27 +204,32 @@ class TestTransforms(unittest.TestCase):
         # And check that elements have been turned in to lower case.
         self.assertTrue(df2.iloc[:, 1].equals(pd.Series(["a", "b", "a", "c"])))
 
+    def _generate_train_test_filenames(self):
+        """
+        Generate filenames for the `load_process_and_store_spreadsheets` function.
+        """
+        # Generate set of filenames.
+        d = tempfile.mkdtemp()
+        return {
+            "all_filename": os.path.join(d, "all_data.tsv"),
+            "train_filename": os.path.join(d, "train.tsv"),
+            "test_filename": os.path.join(d, "test.tsv"),
+        }
+
     def test_load_process_and_store_spreadsheets(self):
         """
         Perform consistency checks on the loaded data.
         """
         # Generate set of filenames.
-        d = tempfile.mkdtemp()
-        filename_all = os.path.join(d, "all_data.tsv")
-        filename_train = os.path.join(d, "train.tsv")
-        filename_test = os.path.join(d, "test.tsv")
+        filename_kwargs = self._generate_train_test_filenames()
 
         # Process all the data and store to disk.
-        load_process_and_store_spreadsheets(
-            all_filename=filename_all,
-            train_filename=filename_train,
-            test_filename=filename_test,
-        )
+        load_process_and_store_spreadsheets(**filename_kwargs)
 
         # Reload the stored data.
-        X_all, y_all = read_preprocessed_data(filename_all)
-        X_train, y_train = read_preprocessed_data(filename_train)
-        X_test, y_test = read_preprocessed_data(filename_test)
+        X_all, y_all = read_preprocessed_data(filename_kwargs["all_filename"])
+        X_train, y_train = read_preprocessed_data(filename_kwargs["train_filename"])
+        X_test, y_test = read_preprocessed_data(filename_kwargs["test_filename"])
 
         # Test that the total row counts add up.
         self.assertEqual(X_all.shape[0], X_train.shape[0] + X_test.shape[0])
@@ -234,3 +237,51 @@ class TestTransforms(unittest.TestCase):
         # The columns must be identical.
         self.assertTrue(np.all(X_all.columns == X_train.columns))
         self.assertTrue(np.all(X_train.columns == X_test.columns))
+
+        def harmonic_mean(t0, t1):
+            return t0 * t1 / (t0 + t1)
+
+        # Test that the phenotype data remains unchanged when using different mutation
+        # data spreadsheets.
+
+        # 1. first read the default mutation spreadsheet.
+        default_filename_kwargs = self._generate_train_test_filenames()
+        load_process_and_store_spreadsheets(
+            spread_sheet_filename="2019-08-27_PLASMA_DEFAULT_Results_Groningen.xlsx",
+            transformation=harmonic_mean,
+            **default_filename_kwargs
+        )
+        X_default, y_default = read_preprocessed_data(
+            default_filename_kwargs["all_filename"]
+        )
+
+        # 2. read the somatic mutation spreadsheet.
+        somatic_filename_kwargs = self._generate_train_test_filenames()
+        load_process_and_store_spreadsheets(
+            spread_sheet_filename="2019-08-27_PLASMA_SOMATIC_Results_groningen.xlsx",
+            transformation=harmonic_mean,
+            **somatic_filename_kwargs
+        )
+        X_somatic, y_somatic = read_preprocessed_data(
+            somatic_filename_kwargs["all_filename"]
+        )
+        # 3. Check that the X and y dataframes are aligned.
+        np.all(X_somatic.index == y_somatic.index)
+        np.all(X_default.index == y_default.index)
+
+        # 4. Check that the phenotype data is the same in both cases.
+        patients_in_common = list(
+            set(X_default.index).intersection(set(X_somatic.index))
+        )
+        from source import phenotype_features
+
+        df_default = X_default.loc[patients_in_common, phenotype_features]
+        df_somatic = X_somatic.loc[patients_in_common, phenotype_features]
+        pd.testing.assert_frame_equal(df_default, df_somatic)
+
+        # self.assertTrue(set(X_default.index).issubset(set(X_somatic.index)))
+
+        # pd.testing.assert_series_equal(
+        #     X_default["gender"].sort_index(), X_somatic["gender"].sort_index()
+        # )
+        # pd.testing.assert_frame_equal(y_somatic.sort_index(), y_default.sort_index())

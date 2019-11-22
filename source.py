@@ -51,6 +51,29 @@ def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def single_out_no_mutation_patients(spread_sheet_filename: str) -> pd.Series:
+    """
+    Parse sheet with patient list that have no mutations.
+    """
+    # Read spreadsheet.
+    no_mutation_data_frame = pd.read_excel(spread_sheet_filename, sheet_name=1)
+
+    # Since the column containing the patient ids might be moved left or right, and up
+    # and down, we have to find the start.
+    for column in no_mutation_data_frame.columns:
+        try:
+            c = no_mutation_data_frame[column].str.lower()
+        except AttributeError:
+            # No string present in column, continue to the next one.
+            continue
+
+        if len(c[c == "patient id"]) != 0:
+            j = c[c == "patient id"].index[0]
+            break
+
+    return no_mutation_data_frame[column].iloc[j + 1 :]
+
+
 def load_avenio_files(
     spread_sheet_filename: str = "2019-08-27_PLASMA_DEFAULT_Results_Groningen.xlsx",
     spss_filename: str = "phenotypes_20191018.sav",
@@ -63,12 +86,14 @@ def load_avenio_files(
     # Load the phenotypes from SPSS file.
     phenotypes = pd.read_spss(spss_filename)
 
-    # List of patients with no mutation.
-    no_mutation_found_patients = (
-        pd.read_excel(spread_sheet_filename, sheet_name=1).dropna().iloc[:, 2]
-    )
+    # Extract list of patients with no mutations, removing potential duplicates.
+    no_mutation_found_patients = single_out_no_mutation_patients(
+        spread_sheet_filename
+    ).unique()
+
     # Identify patients for which with missing sequencing data.
     no_mutation_patient_spss = phenotypes[phenotypes["VAR00001"].isna()]["studynumber"]
+
     # The mutation spreadsheet doesn't have all the data yet, so it must be a
     # subset of all the patients.
     assert set(no_mutation_found_patients).issubset(no_mutation_patient_spss)
@@ -88,7 +113,7 @@ def load_avenio_files(
 
 
 def add_mutationless_patients(
-    mutation_table: pd.DataFrame, mutationless_patients: pd.Series
+    mutation_table: pd.DataFrame, mutationless_patients: np.ndarray
 ) -> pd.DataFrame:
     """
     Add mutationless patients to the mutation table by filling the rows with zeros.
@@ -99,7 +124,7 @@ def add_mutationless_patients(
         # Use column names of `patient_mutation_frequencies`.
         columns=mutation_table.columns,
         # Index by patient id.
-        index=mutationless_patients.values,
+        index=mutationless_patients,
     )
     # Append to table with patient mutations.
     return mutation_table.append(no_mutations)

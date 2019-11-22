@@ -263,6 +263,7 @@ def load_process_and_store_spreadsheets(
         allele_columns=allele_columns,
         transformation=transformation,
     )
+
     # Don't forget about patient for which no mutations where found.
     patient_mutation_frequencies = add_mutationless_patients(
         patient_mutation_frequencies, patient_no_mutations
