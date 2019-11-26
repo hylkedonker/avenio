@@ -191,25 +191,43 @@ def get_top_correlated(
 
 def clean_mutation_columns(
     input_data: pd.DataFrame,
-    columns_to_number=(
+    columns_to_number=[
         "T0: Allele \nFraction",
         "T1: Allele Fraction",
         "T0: No. Mutant \nMolecules per mL",
         "T1: No. Mutant \nMolecules per mL",
-    ),
-) -> pd.DataFrame:
+    ],
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Convert mutation data to floats and drop missing values.
+    Seperate data in a clean, converted set, and the remainder, cotaining missing
+    values.
+
+    Returns:
+        (pd.DataFrame, pd.DataFrame): first element is the clean data, and the
+            second elemnt contains data with missing values.
     """
     clean_data = input_data.copy()
-    # 1) Convert to float.
-    for column_name in columns_to_number:
-        clean_data.loc[:, column_name] = pd.to_numeric(
-            input_data[column_name], errors="coerce"
-        )
 
-    # 2) Drop rows for which the columns can not be converted.
-    return clean_data.dropna(subset=columns_to_number)
+    def convert_percentage_to_float(input_element):
+        """ Convert to float and divide by 100 if it contains the "%" character. """
+        if isinstance(input_element, str) and r"%" in input_element:
+            return float(input_element.rstrip(r"%")) / 100.0
+        return input_element
+
+    # 1) Replace ND values with 0.0.
+    clean_data[columns_to_number] = clean_data.loc[:, columns_to_number].replace(
+        "ND", 0.0
+    )
+
+    for column_name in columns_to_number:
+        # 2) Percentage to float.
+        column_data = clean_data[column_name].apply(convert_percentage_to_float)
+        # 3) Convert to float.
+        clean_data.loc[:, column_name] = pd.to_numeric(column_data, errors="coerce")
+
+    # 4) Split data in clean rows, and rows with NA values.
+    na_rows = clean_data[columns_to_number].isna().any(axis=1)
+    return (clean_data[~na_rows], clean_data[na_rows])
 
 
 def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
@@ -253,12 +271,33 @@ def load_process_and_store_spreadsheets(
     gene_vocabulary = patient_mutations["Gene"].unique()
 
     # Convert particular columns to numbers and drop rows with missing data.
-    patient_mutations = clean_mutation_columns(patient_mutations)
+    clean_patient_mutations, dirty_patient_mutations = clean_mutation_columns(
+        patient_mutations, columns_to_number=allele_columns
+    )
+
+    clean_patients = clean_patient_mutations["Patient ID"].unique()
+    dirty_patients = dirty_patient_mutations["Patient ID"].unique()
+
+    # Verify that the combination of the patients must give all patients.
+    assert set(clean_patients).union(set(dirty_patients)) == set(
+        patient_mutations["Patient ID"].unique()
+    )
+
+    # Verify that all of the patients are in the `clean_patients` records.
+    assert set(dirty_patients).issubset(set(clean_patients))
+
+    # Verify that there are no more NA values.
+    assert (
+        clean_patient_mutations[allele_columns].dropna().shape[0]
+        == clean_patient_mutations[allele_columns].shape[0]
+    )
+    # And that everything went in to the "dirty" records.
+    assert dirty_patient_mutations[allele_columns].dropna().shape[0] == 0
 
     # Perform `transformation` on `allele_columns`. That is, calculate change in
     # DNA mutation.
     patient_mutation_frequencies = patient_allele_frequencies(
-        patient_mutations,
+        clean_patient_mutations,
         gene_vocabulary,
         allele_columns=allele_columns,
         transformation=transformation,

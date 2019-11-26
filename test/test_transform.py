@@ -10,6 +10,7 @@ from scipy.stats import pearsonr
 from source import categorical_columns_to_lower, read_preprocessed_data
 
 from transform import (
+    clean_mutation_columns,
     load_process_and_store_spreadsheets,
     get_top_correlated,
     patient_allele_frequencies,
@@ -26,7 +27,7 @@ class TestTransforms(unittest.TestCase):
         Generate Avenio test data.
         """
         # Patient ids:
-        patients = [1, 1, 2, 3, 3, 3, 3]
+        patients = [1, 1, 2, 3, 3, 3, 3, 4, 4]
 
         # Allele frequencies and corresponding column names.
         F_allele = [
@@ -41,18 +42,24 @@ class TestTransforms(unittest.TestCase):
             # Duplicate mutations of gene "a" in patient 3.
             [0.01, 0.5],  # a
             [0.5, 0.01],  # a
+            # Patient 4, with ND value.
+            [0.01, "ND"],  # a
+            ["2%", "3%"],  # b
         ]
-        allele_columns = ["T0: Allele \nFraction", "T1: Allele Fraction"]
-        self.mutations = pd.DataFrame(F_allele, columns=allele_columns)
+        self.allele_columns = ["T0: Allele \nFraction", "T1: Allele Fraction"]
+        self.raw_mutations = pd.DataFrame(F_allele, columns=self.allele_columns)
 
         # Names of mutations.
-        self.mutations["Gene"] = ["a", "b", "c", "a", "b", "a", "a"]
-        self.mutations["Patient ID"] = patients
+        self.raw_mutations["Gene"] = ["a", "b", "c", "a", "b", "a", "a", "a", "b"]
+        self.raw_mutations["Patient ID"] = patients
+        self.mutations, self.dirty_mutations = clean_mutation_columns(
+            self.raw_mutations, columns_to_number=self.allele_columns
+        )
 
         # Vocabulary of genes, which we now simply take to be all the genes in
         # the data frame (i.e., vocabulary does not contain out of sample
         # genes).
-        self.all_genes = self.mutations["Gene"].unique()
+        self.all_genes = self.raw_mutations["Gene"].unique()
 
     def test_patient_allele_frequencies_errors(self):
         """
@@ -154,8 +161,8 @@ class TestTransforms(unittest.TestCase):
 
         # A single "c" mutation.
         self.assertTrue(np.all(top_df[c_mutation]["# gene 2"] == 1))
-        # Four "a" mutations.
-        self.assertTrue(np.all(top_df[a_mutation]["# gene 1"] == 4))
+        # Five "a" mutations.
+        self.assertTrue(np.all(top_df[a_mutation]["# gene 1"] == 5))
 
         # 4) Check descending and ascending order.
         # First element is largest value.
@@ -216,6 +223,25 @@ class TestTransforms(unittest.TestCase):
             "test_filename": os.path.join(d, "test.tsv"),
         }
 
+    def test_clean_mutation_columns(self):
+        """
+        Test that columns are correctly cleaned.
+        """
+        clean_df, dirty_df = clean_mutation_columns(
+            self.raw_mutations, columns_to_number=self.allele_columns
+        )
+        # The column containing 'ND' should have been replaced by 0.0. This means that
+        # `dirty_df` is empty.
+        self.assertEqual(dirty_df.shape[0], 0)
+        percentage_mutation = (clean_df["Patient ID"] == 4) & (clean_df["Gene"] == "b")
+
+        # Check that percentages have been converted to numbers.
+        self.assertTrue(
+            np.all(
+                clean_df.loc[percentage_mutation, self.allele_columns] == [0.02, 0.03]
+            )
+        )
+
     def test_load_process_and_store_spreadsheets(self):
         """
         Perform consistency checks on the loaded data.
@@ -258,7 +284,7 @@ class TestTransforms(unittest.TestCase):
         # 2. read the somatic mutation spreadsheet.
         somatic_filename_kwargs = self._generate_train_test_filenames()
         load_process_and_store_spreadsheets(
-            spread_sheet_filename="2019-08-27_PLASMA_SOMATIC_Results_groningen.xlsx",
+            spread_sheet_filename="2019-08-27_PLASMA_SOMATIC_Results_Groningen.xlsx",
             transformation=harmonic_mean,
             **somatic_filename_kwargs
         )
