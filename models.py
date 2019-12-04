@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import OrdinalEncoder
-from sklearn.utils import safe_indexing, safe_mask
+from sklearn.utils import safe_mask
 
 from const import target_genes
 from utils import get_categorical_columns
@@ -27,12 +27,12 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
         elif not top_k_features and not thresshold:
             raise ValueError("Either set `top_k_features` or `thresshold`.")
 
-        self.thresshold_ = thresshold
-        self.top_k_ = top_k_features
+        self.thresshold = thresshold
+        self.top_k_features = top_k_features
 
     def fit(self, X, y=None):
         """
-        Find columns with at least `threshold` non-zero values.
+        Filter out columns that do not meet the sparsity constraint.
         """
         # What elements are non-zero?
         non_zero_values = safe_mask(X, X != 0)
@@ -41,8 +41,8 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
         non_zero_count = np.sum(non_zero_values, axis=0)
 
         # Pick columns that have at least `thresshold` occurences.
-        if self.thresshold_:
-            above_thresshold = non_zero_count >= self.thresshold_
+        if self.thresshold:
+            above_thresshold = non_zero_count >= self.thresshold
             # Get column names if pandas.
             if isinstance(X, pd.DataFrame):
                 self.columns_to_keep_ = X.columns[above_thresshold].values
@@ -51,7 +51,7 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
                 self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
         # Otherwise take the `k` largest columns (implicit thressholding).
         else:
-            self.columns_to_keep_ = np.argsort(non_zero_count)[-self.top_k_ :]
+            self.columns_to_keep_ = np.argsort(non_zero_count)[-self.top_k_features :]
 
             # Re-order columns in ascending order.
             self.columns_to_keep_ = sorted(self.columns_to_keep_)
@@ -298,12 +298,13 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         Merge policy: group all categories below the thresshold into one new (composite)
         category.
         """
+        X = X.copy()
         for column, category_list in self.categories_to_merge_.items():
             new_category_name = "+".join(str(cat) for cat in category_list)
             # Replace all of the cells belonging to any of the below-thresshold
             # categories with the new composite category.
             constraint = X[column].isin(category_list)
             X.loc[constraint, column] = new_category_name
-            X[column] = X[column].astype(str)
+            X.loc[:, column] = X[column].astype(str)
 
-        return X.copy()
+        return X

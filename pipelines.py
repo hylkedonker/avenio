@@ -1,7 +1,5 @@
 from typing import Callable
 
-from category_encoders import CatBoostEncoder
-from catboost import CatBoostClassifier
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
@@ -17,6 +15,7 @@ from sklearn.ensemble import (
 from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.linear_model import LogisticRegression, ElasticNet, LinearRegression
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import cross_val_score, KFold
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
@@ -129,7 +128,7 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
 
 def drop_specific_phenotypes(X: pd.DataFrame) -> pd.DataFrame:
     X_prime = X.drop(columns=phenotypes_to_drop)
-    return X_prime
+    return X_prime.copy()
 
 
 def pipeline_Richard(Estimator, **kwargs):
@@ -177,16 +176,13 @@ def pipeline_Julian(Estimator, **kwargs):
     """
     Mutation-only pipeline Julian.
     """
-    from sklearn.feature_selection import f_regression, SelectKBest
-
     p_Julian = Pipeline(
         steps=[
             (
                 "select_columns",
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
-            ("filter_rare_mutations", SparseFeatureFilter(thresshold=8)),
-            ("feature_truncation", SelectKBest(f_regression, k=5)),
+            ("filter_rare_mutations", SparseFeatureFilter(top_k_features=6)),
             ("classify", Estimator(**kwargs)),
         ]
     )
@@ -416,13 +412,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
 
 
 def benchmark_pipelines(
-    pipelines: dict,
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_test: pd.DataFrame,
-    y_test: pd.DataFrame,
-    metric: Callable = accuracy_score,
-    **metric_kwargs,
+    pipelines: dict, X: pd.DataFrame, y: pd.Series, metric: Callable = accuracy_score
 ) -> pd.DataFrame:
     """
     Make a benchmark of classifier versus preprocessing architecture.
@@ -430,19 +420,14 @@ def benchmark_pipelines(
     benchmark_result = {}
     # Each classifier is associated with a set of pipelines.
     for classifier_name, classifier_pipelines in pipelines.items():
-        benchmark_result[classifier_name] = {}
+        classifier_scores = {}
+        benchmark_result[classifier_name] = classifier_scores
         # Benchmark all pipeline configurations with this classifier.
         for pipeline_name, p in classifier_pipelines.items():
-            # Fit to training data.
-            p.fit(X_train, y_train)
-            y_train_pred = p.predict(X_train)
-            y_test_pred = p.predict(X_test)
-            # benchmark_result[classifier_name][f"{pipeline_name}_train"] = metric(
-            #     y_train, y_train_pred, **metric_kwargs
-            # )
-            benchmark_result[classifier_name][f"{pipeline_name}_test"] = metric(
-                y_test, y_test_pred, **metric_kwargs
-            )
+            k_fold_scores = cross_val_score(p, X, y, scoring=metric, cv=5)
+            classifier_scores[f"{pipeline_name} mean"] = np.mean(k_fold_scores)
+            classifier_scores[f"{pipeline_name} std"] = np.std(k_fold_scores)
+
     return pd.DataFrame(benchmark_result).T
 
 
@@ -479,10 +464,8 @@ def reconstruct_categorical_variable_names_Richard(pipeline):
 
 def evaluate_training_size_dependence(
     pipeline,
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_test: pd.DataFrame,
-    y_test: pd.DataFrame,
+    X: pd.DataFrame,
+    y: pd.Series,
     metric: Callable = accuracy_score,
     **metric_kwargs,
 ):
@@ -493,28 +476,49 @@ def evaluate_training_size_dependence(
     sizes = []
     scores = []
 
-    m = X_train.shape[0]
+    k = 5  # K-fold cross validation.
 
-    # Increase training size in multiples of `r`.
-    # 10 = m/r^n ==> n ln r = ln [m/10]
-    r = 1.5
-    n_max = int(np.floor(np.log(m / 10) / np.log(r)))
+    # k-fold cross validation of training size dependence.
+    # Keep track of scores for this particular fold.
+    for train, test in KFold(n_splits=k).split(X):
+        if isinstance(X, pd.DataFrame):
+            X_train, X_test, y_train, y_test = (
+                X.iloc[train],
+                X.iloc[test],
+                y.iloc[train],
+                y.iloc[test],
+            )
+        else:
+            X_train, X_test, y_train, y_test = X[train], X[test], y[train], y[test]
 
-    # We require `m_i` (number of records) to be at least 10.
-    for i in range(n_max):
-        n = n_max - i - 1
-        m_i = int(np.floor(m / r ** n))
-        # Save size.
-        sizes.append(m_i)
+        m = X_train.shape[0]
 
-        # Train model for reduced data set.
-        # p = pipeline.copy()
-        p = pipeline
-        X_train_slice, y_train_slice = X_train.iloc[:m_i], y_train.iloc[:m_i]
-        p.fit(X_train_slice, y_train_slice)
+        # Increase training size in multiples of `r`.
+        # 10 = m/r^n ==> n ln r = ln [m/10]
+        r = 1.5
+        n_max = int(np.floor(np.log(m / 10) / np.log(r)))
 
-        # Calculate and store metric on test set.
-        y_test_pred = p.predict(X_test)
-        scores.append(metric(y_test, y_test_pred, **metric_kwargs))
+        fold_scores = []
+        fold_sizes = []
+        # We require `m_i` (number of records) to be at least 10.
+        for i in range(n_max):
+            n = n_max - i - 1
+            m_i = int(np.floor(m / r ** n))
+            # Save size.
+            fold_sizes.append(m_i)
 
-    return np.array(sizes), np.array(scores)
+            # Train model for reduced data set, of this particular fold.
+            p = pipeline
+            X_train_slice, y_train_slice = X_train.iloc[:m_i], y_train.iloc[:m_i]
+            p.fit(X_train_slice, y_train_slice)
+
+            # Calculate and store metric on test set.
+            y_test_pred = p.predict(X_test)
+            fold_scores.append(metric(y_test, y_test_pred, **metric_kwargs))
+
+        sizes.append(fold_sizes)
+        scores.append(fold_scores)
+
+    # Calculate mean and standard deviation over folds.
+    sizes, scores = np.array(sizes), np.array(scores)
+    return np.mean(sizes, axis=0), np.mean(scores, axis=0), np.std(scores, axis=0)
