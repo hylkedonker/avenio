@@ -17,8 +17,18 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
     Filter out features that are non-zero less than a given thresshold.
     """
 
-    def __init__(self, thresshold: int = 5):
-        self.thresshold = thresshold
+    def __init__(
+        self, top_k_features: Optional[int] = None, thresshold: Optional[int] = None
+    ):
+        if top_k_features and thresshold:
+            raise ValueError(
+                "Choose either `top_k_features` or `thresshold`, not both."
+            )
+        elif not top_k_features and not thresshold:
+            raise ValueError("Either set `top_k_features` or `thresshold`.")
+
+        self.thresshold_ = thresshold
+        self.top_k_ = top_k_features
 
     def fit(self, X, y=None):
         """
@@ -27,15 +37,28 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
         # What elements are non-zero?
         non_zero_values = safe_mask(X, X != 0)
 
-        # Pick columns that have at least `thresshold` occurences.
-        above_thresshold = np.sum(non_zero_values, axis=0) >= self.thresshold
+        # Number of columns not zero.
+        non_zero_count = np.sum(non_zero_values, axis=0)
 
-        # Get column names if pandas.
-        if isinstance(X, pd.DataFrame):
-            self.columns_to_keep_ = X.columns[above_thresshold].values
-        # Otherwise the indices.
+        # Pick columns that have at least `thresshold` occurences.
+        if self.thresshold_:
+            above_thresshold = non_zero_count >= self.thresshold_
+            # Get column names if pandas.
+            if isinstance(X, pd.DataFrame):
+                self.columns_to_keep_ = X.columns[above_thresshold].values
+            # Otherwise the indices.
+            else:
+                self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
+        # Otherwise take the `k` largest columns (implicit thressholding).
         else:
-            self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
+            self.columns_to_keep_ = np.argsort(non_zero_count)[-self.top_k_ :]
+
+            # Re-order columns in ascending order.
+            self.columns_to_keep_ = sorted(self.columns_to_keep_)
+
+            # Turn into column names, when Data Frame is passed.
+            if isinstance(X, pd.DataFrame):
+                self.columns_to_keep_ = X.columns[self.columns_to_keep_].values
 
         return self
 

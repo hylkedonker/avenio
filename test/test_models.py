@@ -14,7 +14,7 @@ from models import (
 
 
 class TestSparseFeatureFilter(unittest.TestCase):
-    def test_filter_pandas(self):
+    def test_thresshold_filter_pandas(self):
         """
         Test thessholding feature filter when input is pandas Dataframe.
         """
@@ -22,6 +22,8 @@ class TestSparseFeatureFilter(unittest.TestCase):
             np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T,
             columns=["a", "b", "c"],
         )
+
+        # Test filtering using predetermined thresshold.
         f = SparseFeatureFilter(thresshold=2)
         f.fit(X)
         # Check that correct columns are filtered.
@@ -29,12 +31,46 @@ class TestSparseFeatureFilter(unittest.TestCase):
         # Test that array is correctly transformed.
         np.testing.assert_array_equal(f.transform(X), X[["a", "c"]])
 
+    def test_k_features_filter_pandas(self):
+        """
+        Test filter out precisely `k` features with Pandas data frame.
+        """
+        X = pd.DataFrame(
+            np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T,
+            columns=["a", "b", "c"],
+        )
+
+        # First check for 1 column.
+        k = 1
+        f = SparseFeatureFilter(top_k_features=k)
+        f.fit(X)
+        self.assertEqual(len(f.columns_to_keep_), k)
+        self.assertEqual(f.columns_to_keep_, "a")
+
+        # Secondly, check for 2 columns.
+        k = 2
+        f = SparseFeatureFilter(top_k_features=k)
+        f.fit(X)
+        self.assertEqual(len(f.columns_to_keep_), k)
+        self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
+
     def test_filter_numpy(self):
         """
         Test thressholding feature filter when input is numpy array.
         """
         X = np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T
         f = SparseFeatureFilter(thresshold=2)
+
+        f.fit(X)
+        self.assertEqual(set(f.columns_to_keep_), {0, 2})
+        np.testing.assert_array_equal(f.transform(X), X[:, (0, 2)])
+
+    def test_k_features_filter_numpy(self):
+        """
+        Test filter out precisely `k` features from numpy array.
+        """
+        X = np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T
+        f = SparseFeatureFilter(top_k_features=2)
 
         f.fit(X)
         self.assertEqual(set(f.columns_to_keep_), {0, 2})

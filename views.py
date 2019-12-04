@@ -230,9 +230,11 @@ def view_linear_model_richard(pipeline):
     variable_names = reconstruct_categorical_variable_names_Richard(pipeline)
     # Concatenate with unaltered phenotype columns.
     variable_names.extend(calculate_pass_through_column_names_Richard())
+
     coefficients, names = remove_parallel_coefficients(
         richard_classifier.coef_, variable_names
     )
+    print("Warning: Removed redundant coefficients", set(variable_names) - set(names))
 
     with sns.plotting_context(font_scale=1.5):
         plt.figure(figsize=(8, 6))
@@ -247,7 +249,6 @@ def view_linear_model_julian(p_julian):
     """
     classifier = p_julian.steps[-1][1]
     column_names = p_julian.steps[-2][1].columns_to_keep_
-    print(classifier.coef_)
     with sns.plotting_context(font_scale=1.5):
         plt.xlabel(r"Slope")
         sns.barplot(x=classifier.coef_, y=column_names, label="large")

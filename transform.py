@@ -197,6 +197,7 @@ def clean_mutation_columns(
         "T0: No. Mutant \nMolecules per mL",
         "T1: No. Mutant \nMolecules per mL",
     ],
+    fill_ND=np.nan,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Seperate data in a clean, converted set, and the remainder, cotaining missing
@@ -214,9 +215,9 @@ def clean_mutation_columns(
             return float(input_element.rstrip(r"%")) / 100.0
         return input_element
 
-    # 1) Replace ND values with 0.0.
+    # 1) Replace ND values with NA.
     clean_data[columns_to_number] = clean_data.loc[:, columns_to_number].replace(
-        "ND", 0.0
+        "ND", fill_ND
     )
 
     for column_name in columns_to_number:
@@ -272,7 +273,9 @@ def load_process_and_store_spreadsheets(
 
     # Convert particular columns to numbers and drop rows with missing data.
     clean_patient_mutations, dirty_patient_mutations = clean_mutation_columns(
-        patient_mutations, columns_to_number=allele_columns
+        patient_mutations,
+        columns_to_number=allele_columns,
+        # fill_ND=0.0
     )
 
     clean_patients = clean_patient_mutations["Patient ID"].unique()
@@ -283,8 +286,8 @@ def load_process_and_store_spreadsheets(
         patient_mutations["Patient ID"].unique()
     )
 
-    # Verify that all of the patients are in the `clean_patients` records.
-    assert set(dirty_patients).issubset(set(clean_patients))
+    # # Verify that all of the patients are in the `clean_patients` records.
+    # assert set(dirty_patients).issubset(set(clean_patients))
 
     # Verify that there are no more NA values.
     assert (

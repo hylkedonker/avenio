@@ -177,13 +177,16 @@ def pipeline_Julian(Estimator, **kwargs):
     """
     Mutation-only pipeline Julian.
     """
+    from sklearn.feature_selection import f_regression, SelectKBest
+
     p_Julian = Pipeline(
         steps=[
             (
                 "select_columns",
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
-            ("filter_rare_mutations", SparseFeatureFilter(thresshold=6)),
+            ("filter_rare_mutations", SparseFeatureFilter(thresshold=8)),
+            ("feature_truncation", SelectKBest(f_regression, k=5)),
             ("classify", Estimator(**kwargs)),
         ]
     )
