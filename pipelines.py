@@ -13,7 +13,13 @@ from sklearn.ensemble import (
     VotingRegressor,
 )
 from sklearn.dummy import DummyClassifier, DummyRegressor
-from sklearn.linear_model import LogisticRegression, ElasticNet, LinearRegression
+from sklearn.linear_model import (
+    ARDRegression,
+    BayesianRidge,
+    LogisticRegression,
+    ElasticNet,
+    LinearRegression,
+)
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.naive_bayes import GaussianNB
@@ -166,7 +172,7 @@ def pipeline_Richard(Estimator, **kwargs):
                 FunctionTransformer(drop_specific_phenotypes, validate=False),
             ),
             ("transform_columns", category_preprocess),
-            ("classify", Estimator(**kwargs)),
+            ("estimator", Estimator(**kwargs)),
         ]
     )
     return p_Richard
@@ -183,7 +189,7 @@ def pipeline_Julian(Estimator, **kwargs):
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
             ("filter_rare_mutations", SparseFeatureFilter(top_k_features=6)),
-            ("classify", Estimator(**kwargs)),
+            ("estimator", Estimator(**kwargs)),
         ]
     )
     return p_Julian
@@ -214,7 +220,7 @@ def pipeline_Freeman(Estimator, **kwargs):
                 ),
             ),
             ("transform_columns", all_categorical_columns_transformer),
-            ("classify", Estimator(**kwargs)),
+            ("estimator", Estimator(**kwargs)),
         ]
     )
     return p_Freeman
@@ -233,7 +239,7 @@ def pipeline_Nikolay(Estimator, **kwargs):
                     categorical_columns=categorical_input_columns, thresshold=30
                 ),
             ),
-            ("classify", Estimator(**kwargs)),
+            ("estimator", Estimator(**kwargs)),
         ]
     )
     return p_Bogolyubov
@@ -263,7 +269,7 @@ def pipeline_Pyotr(Estimator, **kwargs):
                 ),
             ),
             ("transform_categories", all_categorical_columns_transformer),
-            ("classify", Estimator(**kwargs)),
+            ("estimator", Estimator(**kwargs)),
         ]
     )
     return p_Kapitsa
@@ -354,6 +360,8 @@ def build_regression_pipelines(random_state: int = 1234) -> dict:
             "max_iter": 1000,
         },
         LinearRegression: {},
+        ARDRegression: {},
+        BayesianRidge: {},
         SVR: {"kernel": "rbf", "gamma": "scale"},
         DummyRegressor: {"strategy": "median"},
     }

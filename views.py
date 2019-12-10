@@ -19,6 +19,7 @@ from pipelines import (
     calculate_pass_through_column_names_Richard,
     reconstruct_categorical_variable_names_Richard,
 )
+from utils import bootstrap
 
 matplotlib.rc("font", size=22)
 matplotlib.rc("lines", linewidth=4)
@@ -222,11 +223,26 @@ def remove_parallel_coefficients(coefficients, names):
     return coef_new, name_new
 
 
-def view_linear_model_richard(pipeline):
+@bootstrap(k=3)
+def fit_model_coefficients(X_train, y_train, X_test, y_test, pipeline):
+    """
+    Fit coefficients only, ignore test data.
+
+    Signature:
+    fit_model_coefficients(X, y)
+    """
+    pipeline.fit(X_train, y_train)
+    estimator = pipeline.named_steps["estimator"]
+    return estimator.coef_
+
+
+def view_linear_model_richard(X, y, pipeline):
     """
     Plot the coefficients of Richard model.
     """
-    richard_classifier = pipeline.steps[-1][1]
+    bootstrapped_coefficients = fit_model_coefficients(X, y, pipeline)
+
+    richard_classifier = pipeline.named_steps["estimator"]
     variable_names = reconstruct_categorical_variable_names_Richard(pipeline)
     # Concatenate with unaltered phenotype columns.
     variable_names.extend(calculate_pass_through_column_names_Richard())
