@@ -47,6 +47,12 @@ class TestSparseFeatureFilter(unittest.TestCase):
         self.assertEqual(len(f.columns_to_keep_), k)
         self.assertEqual(f.columns_to_keep_, "a")
 
+        # Only consider a subset of all the columns.
+        f = SparseFeatureFilter(top_k_features=k, columns_to_consider=["b", "c"])
+        f.fit(X)
+        self.assertEqual(len(f.columns_to_keep_), k)
+        self.assertEqual(f.columns_to_keep_, "c")
+
         # Secondly, check for 2 columns.
         k = 2
         f = SparseFeatureFilter(top_k_features=k)
@@ -54,13 +60,19 @@ class TestSparseFeatureFilter(unittest.TestCase):
         self.assertEqual(len(f.columns_to_keep_), k)
         self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
 
+        # Only consider a subset of all the columns.
+        f = SparseFeatureFilter(top_k_features=k, columns_to_consider=["b", "c"])
+        f.fit(X)
+        self.assertEqual(len(f.columns_to_keep_), k)
+        self.assertEqual(set(f.columns_to_keep_), {"b", "c"})
+
     def test_filter_numpy(self):
         """
         Test thressholding feature filter when input is numpy array.
         """
         X = np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T
-        f = SparseFeatureFilter(thresshold=2)
 
+        f = SparseFeatureFilter(thresshold=2)
         f.fit(X)
         self.assertEqual(set(f.columns_to_keep_), {0, 2})
         np.testing.assert_array_equal(f.transform(X), X[:, (0, 2)])
@@ -70,11 +82,17 @@ class TestSparseFeatureFilter(unittest.TestCase):
         Test filter out precisely `k` features from numpy array.
         """
         X = np.array([range(4), [0] * 3 + [1], [0] * 2 + [1, 2]]).T
-        f = SparseFeatureFilter(top_k_features=2)
 
+        k = 2
+        f = SparseFeatureFilter(top_k_features=k)
         f.fit(X)
         self.assertEqual(set(f.columns_to_keep_), {0, 2})
         np.testing.assert_array_equal(f.transform(X), X[:, (0, 2)])
+
+        f = SparseFeatureFilter(top_k_features=k, columns_to_consider=[1, 2])
+        f.fit(X)
+        self.assertEqual(set(f.columns_to_keep_), {1, 2})
+        np.testing.assert_array_equal(f.transform(X), X[:, (1, 2)])
 
 
 class TestClassifierAsTransformer(unittest.TestCase):

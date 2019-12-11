@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 
 from catboost import CatBoostClassifier
 import gensim
@@ -18,7 +18,10 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
     """
 
     def __init__(
-        self, top_k_features: Optional[int] = None, thresshold: Optional[int] = None
+        self,
+        top_k_features: Optional[int] = None,
+        thresshold: Optional[int] = None,
+        columns_to_consider: Union[str, list] = "all",
     ):
         if top_k_features and thresshold:
             raise ValueError(
@@ -29,6 +32,7 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
 
         self.thresshold = thresshold
         self.top_k_features = top_k_features
+        self.columns_to_consider = columns_to_consider
 
     def fit(self, X, y=None):
         """
@@ -49,9 +53,37 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
             # Otherwise the indices.
             else:
                 self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
+
+            # Filter out columns which should not be considered.
+            if self.columns_to_consider != "all":
+                self.columns_to_keep_ = list(
+                    filter(
+                        lambda x: x in self.columns_to_consider, self.columns_to_keep_
+                    )
+                )
         # Otherwise take the `k` largest columns (implicit thressholding).
         else:
-            self.columns_to_keep_ = np.argsort(non_zero_count)[-self.top_k_features :]
+            self.columns_to_keep_ = np.argsort(non_zero_count)
+            # Filter out columns which should not be considered.
+            # N.B.: This should be done before taking the top `k` columns. Otherwise we
+            # end up with less than `k` features.
+            if self.columns_to_consider != "all":
+                if isinstance(X, pd.DataFrame):
+
+                    def column_subset_filter(x):
+                        return X.columns[x] in self.columns_to_consider
+
+                else:
+
+                    def column_subset_filter(x):
+                        return x in self.columns_to_consider
+
+                self.columns_to_keep_ = list(
+                    filter(column_subset_filter, self.columns_to_keep_)
+                )
+            # After filtering out columns that should not be considered, take the top
+            # `k` columns.
+            self.columns_to_keep_ = self.columns_to_keep_[-self.top_k_features :]
 
             # Re-order columns in ascending order.
             self.columns_to_keep_ = sorted(self.columns_to_keep_)
