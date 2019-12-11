@@ -4,6 +4,7 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
 from sklearn.decomposition import PCA
+from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.ensemble import (
     GradientBoostingClassifier,
     GradientBoostingRegressor,
@@ -12,7 +13,6 @@ from sklearn.ensemble import (
     VotingClassifier,
     VotingRegressor,
 )
-from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.linear_model import (
     ARDRegression,
     BayesianRidge,
@@ -26,7 +26,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
+from sklearn.preprocessing import FunctionTransformer, KBinsDiscretizer, OneHotEncoder
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import numpy as np
@@ -99,16 +99,16 @@ mutation_columns = [
 ]
 
 phenotypes_to_drop = [
-    "Systemischetherapie",
-    # "histology_grouped",
-    # "lymfmeta",
-    "brainmeta",
-    "adrenalmeta",
-    # "livermeta",
-    "stage",
-    "therapyline",
-    "lungmeta",
-    "skeletonmeta",
+    # "Systemischetherapie",
+    # # "histology_grouped",
+    # # "lymfmeta",
+    # "brainmeta",
+    # "adrenalmeta",
+    # # "livermeta",
+    # "stage",
+    # "therapyline",
+    # "lungmeta",
+    # "skeletonmeta",
 ]
 
 
@@ -150,7 +150,14 @@ def pipeline_Richard(Estimator, **kwargs):
         if column not in phenotypes_to_drop
     ]
     category_preprocess = ColumnTransformer(
-        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
+        [
+            ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
+            (
+                "age_discretizer",
+                KBinsDiscretizer(n_bins=3, encode="onehot"),
+                ["leeftijd"],
+            ),
+        ],
         remainder="passthrough",
     )
 
@@ -205,7 +212,12 @@ def pipeline_Freeman(Estimator, **kwargs):
                 "LabelEncoder",
                 OneHotEncoder(handle_unknown="ignore"),
                 categorical_input_columns,
-            )
+            ),
+            # (
+            #     "age_discretizer",
+            #     KBinsDiscretizer(n_bins=3, encode="onehot"),
+            #     ["leeftijd"],
+            # ),
         ],
         remainder="passthrough",
     )
@@ -213,6 +225,12 @@ def pipeline_Freeman(Estimator, **kwargs):
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
         steps=[
+            # (
+            #     "filter_rare_mutations",
+            #     SparseFeatureFilter(
+            #         top_k_features=6, columns_to_consider=mutation_columns
+            #     ),
+            # ),
             (
                 "category_grouper",
                 MergeRareCategories(
@@ -356,7 +374,7 @@ def build_regression_pipelines(random_state: int = 1234) -> dict:
         ElasticNet: {
             "random_state": random_state,
             "l1_ratio": 0.75,
-            "alpha": 1.0,
+            "alpha": 2,
             "max_iter": 1000,
         },
         LinearRegression: {},
@@ -399,8 +417,8 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "penalty": "elasticnet",
             "class_weight": "balanced",
             "solver": "saga",
-            "l1_ratio": 0.75,
-            "C": 0.5,
+            "l1_ratio": 0.5,
+            "C": 1.0,
         },
         SVC: {
             "random_state": random_state,
@@ -413,7 +431,10 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     }
     return {
         str(Classifier.__name__): pipelines(
-            Classifier, VotingEstimator=VotingClassifier, **kwargs
+            Classifier,
+            # VotingEstimator=VotingClassifier,
+            VotingEstimator=None,
+            **kwargs,
         )
         for Classifier, kwargs in classifiers.items()
     }
@@ -439,16 +460,21 @@ def benchmark_pipelines(
     return pd.DataFrame(benchmark_result).T
 
 
-def calculate_pass_through_column_names_Richard():
+def calculate_pass_through_column_names_Richard(pipeline):
     """
     Determine the column names that pass unaltered through the Richard pipeline.
     """
-    return [
+    columns = [
         column
         for column in phenotype_features
         if column not in categorical_input_columns
         if column not in phenotypes_to_drop
     ]
+    # Remove age column, if necessary.
+    column_transformer = pipeline.steps[-2][1]
+    if "age_discretizer" in column_transformer.named_transformers_:
+        columns.remove("leeftijd")
+    return columns
 
 
 def reconstruct_categorical_variable_names_Richard(pipeline):
@@ -459,11 +485,27 @@ def reconstruct_categorical_variable_names_Richard(pipeline):
     column_transformer = pipeline.steps[-2][1]
     # Consistency check: The column transformer should only contain the one hot encoder.
     assert len(column_transformer.transformers_) == 2
+
     # Get the column names that are transformed.
+    # 1) One-hot-encoder.
     columns = column_transformer.transformers_[0][2]
     hot_encoder = column_transformer.transformers_[0][1]
     # And generate the feature names.
     names = list(hot_encoder.get_feature_names(input_features=columns))
+
+    # 2) Discretizer, if available.
+    if "age_discretizer" in column_transformer.named_transformers_:
+        age_binner = column_transformer.named_transformers_["age_discretizer"]
+        edges = age_binner.bin_edges_[
+            0
+        ]  # Not sure why this is a tuple, with 1 element.
+
+        # Generate labels for the bins.
+        age_labels = []
+        for i in range(len(edges) - 1):
+            age_labels.append("{:.0f}<=age<{:.0f}".format(edges[i], edges[i + 1]))
+        # And add age bin labels.
+        names.extend(age_labels)
 
     # Make the names prettier.
     names = [name.replace("_", ": ") for name in names]

@@ -206,21 +206,22 @@ def categorical_signal_summary(
     return summary.set_index(["category", "item"])
 
 
-def remove_parallel_coefficients(coefficients, names):
+def remove_parallel_coefficients(coeff_mean, coeff_std, names):
     """
     Remove coefficients that are (almost) equal but opposite in sign.
     """
-    name_new, coef_new = [], []
-    for i, y_i in enumerate(coefficients):
+    name_new, coef_mean_new, coef_std_new = [], [], []
+    for i, y_i in enumerate(coeff_mean):
         if i < len(names) - 1:
             # If almost opposite in sign.
-            if np.absolute(y_i + coefficients[i + 1]) < 0.01 * np.std(coefficients):
+            if np.absolute(y_i + coeff_mean[i + 1]) < 0.01 * np.std(coeff_mean):
                 continue
 
         name_new.append(names[i])
-        coef_new.append(y_i)
+        coef_mean_new.append(y_i)
+        coef_std_new.append(coeff_std[i])
 
-    return coef_new, name_new
+    return coef_mean_new, coef_std_new, name_new
 
 
 @bootstrap(k=3)
@@ -240,34 +241,38 @@ def view_linear_model_richard(X, y, pipeline):
     """
     Plot the coefficients of Richard model.
     """
+    # Calculate coefficients' mean and standard deviation of the bootstrapped model.
     bootstrapped_coefficients = fit_model_coefficients(X, y, pipeline)
+    coeff_mean, coeff_std = bootstrapped_coefficients
 
-    richard_classifier = pipeline.named_steps["estimator"]
-    variable_names = reconstruct_categorical_variable_names_Richard(pipeline)
+    variable_names = []
+    # Generate variable names of the one hot encoded categorical data.
+    variable_names.extend(reconstruct_categorical_variable_names_Richard(pipeline))
     # Concatenate with unaltered phenotype columns.
-    variable_names.extend(calculate_pass_through_column_names_Richard())
+    variable_names.extend(calculate_pass_through_column_names_Richard(pipeline))
 
-    coefficients, names = remove_parallel_coefficients(
-        richard_classifier.coef_, variable_names
+    coeff_mean, coeff_std, variable_names = remove_parallel_coefficients(
+        coeff_mean, coeff_std, variable_names
     )
-    print("Warning: Removed redundant coefficients", set(variable_names) - set(names))
+    # print("Warning: Removed redundant coefficients", set(variable_names) - set(names))
 
     with sns.plotting_context(font_scale=1.5):
         plt.figure(figsize=(8, 6))
         plt.xlabel(r"Slope")
-        sns.barplot(x=coefficients, y=names, label="large")
+        sns.barplot(x=coeff_mean, xerr=coeff_std, y=variable_names, label="large")
         plt.tight_layout()
 
 
-def view_linear_model_julian(p_julian):
+def view_linear_model_julian(X, y, p_julian):
     """
     Plot the coefficients of Richard model.
     """
-    classifier = p_julian.steps[-1][1]
+    coeff_mean, coeff_std = fit_model_coefficients(X, y, p_julian)
+
     column_names = p_julian.steps[-2][1].columns_to_keep_
     with sns.plotting_context(font_scale=1.5):
         plt.xlabel(r"Slope")
-        sns.barplot(x=classifier.coef_, y=column_names, label="large")
+        sns.barplot(x=coeff_mean, xerr=coeff_std, y=column_names, label="large")
         plt.tight_layout()
 
 
