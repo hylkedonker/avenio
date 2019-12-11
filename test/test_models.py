@@ -27,7 +27,7 @@ class TestSparseFeatureFilter(unittest.TestCase):
         f = SparseFeatureFilter(thresshold=2)
         f.fit(X)
         # Check that correct columns are filtered.
-        self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
+        self.assertEqual(f.columns_to_filter_, "b")
         # Test that array is correctly transformed.
         np.testing.assert_array_equal(f.transform(X), X[["a", "c"]])
 
@@ -44,27 +44,30 @@ class TestSparseFeatureFilter(unittest.TestCase):
         k = 1
         f = SparseFeatureFilter(top_k_features=k)
         f.fit(X)
-        self.assertEqual(len(f.columns_to_keep_), k)
-        self.assertEqual(f.columns_to_keep_, "a")
+        self.assertEqual(len(f.columns_to_filter_), X.shape[1] - k)
+        self.assertEqual(set(f.columns_to_filter_), {"b", "c"})
 
         # Only consider a subset of all the columns.
         f = SparseFeatureFilter(top_k_features=k, columns_to_consider=["b", "c"])
         f.fit(X)
-        self.assertEqual(len(f.columns_to_keep_), k)
-        self.assertEqual(f.columns_to_keep_, "c")
-
+        self.assertEqual(len(f.columns_to_filter_), len(f.columns_to_consider) - k)
+        self.assertEqual(f.columns_to_filter_, "b")
+        # Check that column that should not be considered remains untouched.
+        pd.testing.assert_frame_equal(f.transform(X), X[["a", "c"]])
         # Secondly, check for 2 columns.
         k = 2
         f = SparseFeatureFilter(top_k_features=k)
         f.fit(X)
-        self.assertEqual(len(f.columns_to_keep_), k)
-        self.assertEqual(set(f.columns_to_keep_), {"a", "c"})
+        self.assertEqual(len(f.columns_to_filter_), X.shape[1] - k)
+        self.assertEqual(f.columns_to_filter_, "b")
 
         # Only consider a subset of all the columns.
         f = SparseFeatureFilter(top_k_features=k, columns_to_consider=["b", "c"])
         f.fit(X)
-        self.assertEqual(len(f.columns_to_keep_), k)
-        self.assertEqual(set(f.columns_to_keep_), {"b", "c"})
+        self.assertEqual(len(f.columns_to_filter_), len(f.columns_to_consider) - k)
+        self.assertEqual(set(f.columns_to_filter_), set())
+        # Check that column that should not be considered remains untouched.
+        pd.testing.assert_frame_equal(f.transform(X), X)
 
     def test_filter_numpy(self):
         """
@@ -74,7 +77,7 @@ class TestSparseFeatureFilter(unittest.TestCase):
 
         f = SparseFeatureFilter(thresshold=2)
         f.fit(X)
-        self.assertEqual(set(f.columns_to_keep_), {0, 2})
+        self.assertEqual(set(f.columns_to_filter_), {1})
         np.testing.assert_array_equal(f.transform(X), X[:, (0, 2)])
 
     def test_k_features_filter_numpy(self):
@@ -86,13 +89,14 @@ class TestSparseFeatureFilter(unittest.TestCase):
         k = 2
         f = SparseFeatureFilter(top_k_features=k)
         f.fit(X)
-        self.assertEqual(set(f.columns_to_keep_), {0, 2})
+        self.assertEqual(set(f.columns_to_filter_), {1})
         np.testing.assert_array_equal(f.transform(X), X[:, (0, 2)])
 
+        k = 1
         f = SparseFeatureFilter(top_k_features=k, columns_to_consider=[1, 2])
         f.fit(X)
-        self.assertEqual(set(f.columns_to_keep_), {1, 2})
-        np.testing.assert_array_equal(f.transform(X), X[:, (1, 2)])
+        self.assertEqual(set(f.columns_to_filter_), {1})
+        np.testing.assert_array_equal(f.transform(X), X[:, (0, 2)])
 
 
 class TestClassifierAsTransformer(unittest.TestCase):

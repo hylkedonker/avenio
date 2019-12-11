@@ -34,6 +34,66 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
         self.top_k_features = top_k_features
         self.columns_to_consider = columns_to_consider
 
+    # def fit(self, X, y=None):
+    #     """
+    #     Filter out columns that do not meet the sparsity constraint.
+    #     """
+    #     # What elements are non-zero?
+    #     non_zero_values = safe_mask(X, X != 0)
+
+    #     # Number of columns not zero.
+    #     non_zero_count = np.sum(non_zero_values, axis=0)
+
+    #     # Pick columns that have at least `thresshold` occurences.
+    #     if self.thresshold:
+    #         above_thresshold = non_zero_count >= self.thresshold
+    #         # Get column names if pandas.
+    #         if isinstance(X, pd.DataFrame):
+    #             self.columns_to_keep_ = X.columns[above_thresshold].values
+    #         # Otherwise the indices.
+    #         else:
+    #             self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
+
+    #         # Filter out columns which should not be considered.
+    #         if self.columns_to_consider != "all":
+    #             self.columns_to_keep_ = list(
+    #                 filter(
+    #                     lambda x: x in self.columns_to_consider, self.columns_to_keep_
+    #                 )
+    #             )
+    #     # Otherwise take the `k` largest columns (implicit thressholding).
+    #     else:
+    #         self.columns_to_keep_ = np.argsort(non_zero_count)
+    #         # Filter out columns which should not be considered.
+    #         # N.B.: This should be done before taking the top `k` columns. Otherwise we
+    #         # end up with less than `k` features.
+    #         if self.columns_to_consider != "all":
+    #             if isinstance(X, pd.DataFrame):
+
+    #                 def column_subset_filter(x):
+    #                     return X.columns[x] in self.columns_to_consider
+
+    #             else:
+
+    #                 def column_subset_filter(x):
+    #                     return x in self.columns_to_consider
+
+    #             self.columns_to_keep_ = list(
+    #                 filter(column_subset_filter, self.columns_to_keep_)
+    #             )
+    #         # After filtering out columns that should not be considered, take the top
+    #         # `k` columns.
+    #         self.columns_to_keep_ = self.columns_to_keep_[-self.top_k_features :]
+
+    #         # Re-order columns in ascending order.
+    #         self.columns_to_keep_ = sorted(self.columns_to_keep_)
+
+    #         # Turn into column names, when Data Frame is passed.
+    #         if isinstance(X, pd.DataFrame):
+    #             self.columns_to_keep_ = X.columns[self.columns_to_keep_].values
+
+    #     return self
+
     def fit(self, X, y=None):
         """
         Filter out columns that do not meet the sparsity constraint.
@@ -46,24 +106,25 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
 
         # Pick columns that have at least `thresshold` occurences.
         if self.thresshold:
-            above_thresshold = non_zero_count >= self.thresshold
-            # Get column names if pandas.
+            below_thresshold = (
+                non_zero_count < self.thresshold
+            )  # Get column names if pandas.
+
             if isinstance(X, pd.DataFrame):
-                self.columns_to_keep_ = X.columns[above_thresshold].values
+                self.columns_to_filter_ = X.columns[below_thresshold].values
             # Otherwise the indices.
             else:
-                self.columns_to_keep_ = np.nonzero(above_thresshold)[0]
-
+                self.columns_to_filter_ = np.nonzero(below_thresshold)[0]
             # Filter out columns which should not be considered.
             if self.columns_to_consider != "all":
-                self.columns_to_keep_ = list(
+                self.columns_to_filter_ = list(
                     filter(
-                        lambda x: x in self.columns_to_consider, self.columns_to_keep_
+                        lambda x: x in self.columns_to_consider, self.columns_to_filter_
                     )
                 )
         # Otherwise take the `k` largest columns (implicit thressholding).
         else:
-            self.columns_to_keep_ = np.argsort(non_zero_count)
+            self.columns_to_filter_ = np.argsort(non_zero_count)
             # Filter out columns which should not be considered.
             # N.B.: This should be done before taking the top `k` columns. Otherwise we
             # end up with less than `k` features.
@@ -78,29 +139,36 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
                     def column_subset_filter(x):
                         return x in self.columns_to_consider
 
-                self.columns_to_keep_ = list(
-                    filter(column_subset_filter, self.columns_to_keep_)
+                self.columns_to_filter_ = list(
+                    filter(column_subset_filter, self.columns_to_filter_)
                 )
             # After filtering out columns that should not be considered, take the top
             # `k` columns.
-            self.columns_to_keep_ = self.columns_to_keep_[-self.top_k_features :]
+            self.columns_to_filter_ = self.columns_to_filter_[: -self.top_k_features]
 
             # Re-order columns in ascending order.
-            self.columns_to_keep_ = sorted(self.columns_to_keep_)
+            self.columns_to_filter_ = sorted(self.columns_to_filter_)
 
             # Turn into column names, when Data Frame is passed.
             if isinstance(X, pd.DataFrame):
-                self.columns_to_keep_ = X.columns[self.columns_to_keep_].values
-
-        return self
+                self.columns_to_filter_ = X.columns[self.columns_to_filter_].values
 
     def transform(self, X, y=None):
         """
         Chuck out columns below thresshold.
         """
         if isinstance(X, pd.DataFrame):
-            return X[self.columns_to_keep_]
-        return X[:, self.columns_to_keep_]
+            columns_to_keep = list(
+                filter(lambda x: x not in self.columns_to_filter_, X.columns)
+            )
+            return X[columns_to_keep]
+        else:
+            columns_to_keep = list(
+                filter(
+                    lambda x: x not in self.columns_to_filter_, np.arange(0, X.shape[1])
+                )
+            )
+            return X[:, columns_to_keep]
 
 
 class CustomCatBoostClassifier(CatBoostClassifier):
