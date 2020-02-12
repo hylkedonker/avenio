@@ -192,12 +192,12 @@ def get_top_correlated(
 def clean_mutation_columns(
     input_data: pd.DataFrame,
     columns_to_number=[
-        "T0: Allele \nFraction",
+        "T0: Allele Fraction",
         "T1: Allele Fraction",
-        "T0: No. Mutant \nMolecules per mL",
-        "T1: No. Mutant \nMolecules per mL",
+        "T0: Mutant concentration",
+        "T1: Mutant concentration",
     ],
-    fill_ND=np.nan,
+    fill_ND=None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Seperate data in a clean, converted set, and the remainder, cotaining missing
@@ -248,11 +248,10 @@ def load_process_and_store_spreadsheets(
     spread_sheet_filename: str = "2019-02-12_FINAL_RESULTS_SomaticAll.xlsx",
     spss_filename: str = "phenotypes_20191018.sav",
     transformation: Callable = lambda x, y: y - x,
-    allele_columns: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
-    random_state: int = 1234,
-    all_filename: str = "output/all_data.tsv",
-    train_filename: str = "output/train.tsv",
-    test_filename: str = "output/test.tsv",
+    allele_columns: List[str] = ["T0: Allele Fraction", "T1: Allele Fraction"],
+    all_filename_prefix: str = "output/all",
+    train_filename_prefix: str = "output/train",
+    test_filename_prefix: str = "output/test",
 ):
     """
     Read, clean, transform and store raw data.
@@ -267,15 +266,87 @@ def load_process_and_store_spreadsheets(
         spread_sheet_filename, spss_filename
     )
 
-    # Vocabulary is the entire dataset, not only training set. Otherwise we run
-    # into problems during inference.
-    gene_vocabulary = patient_mutations["Gene"].unique()
+    # Combine the T0 and T1 measurements in a single record.
+    spread_sheet = merge_mutation_spreadsheet_t0_with_t1(patient_mutations)
 
-    # Convert particular columns to numbers and drop rows with missing data.
+    # Partition the data in SNV and CNV mutations.
+    snv_columns = [
+        "T0: Allele Fraction",
+        "T0: Mutant concentration",
+        "T1: Allele Fraction",
+        "T1: Mutant concentration",
+    ]
+    cnv_columns = ["T0: CNV Score", "T1: CNV Score"]
+
+    # Missing values imply zero mutations.
+    snv_mutations = spread_sheet[snv_columns].dropna(how="all").fillna(0).reset_index()
+    # Missing values imply no copies (CNV score of zero).
+    cnv_mutations = spread_sheet[cnv_columns].dropna(how="all").fillna(0).reset_index()
+
+    snv_mutations_transposed = clean_and_transpose_data_frame(
+        snv_mutations, allele_columns, transformation
+    )
+    cnv_mutations_transposed = clean_and_transpose_data_frame(
+        cnv_mutations, cnv_columns, transformation
+    )
+
+    # Don't forget about patient for which no mutations where found.
+    snv_mutations_transposed = add_mutationless_patients(
+        snv_mutations_transposed, patient_no_mutations
+    )
+    cnv_mutations_transposed = add_mutationless_patients(
+        cnv_mutations_transposed, patient_no_mutations
+    )
+
+    X_snv = merge_mutations_with_phenotype_data(snv_mutations_transposed, phenotypes)
+    data_frame_to_disk(
+        X_snv,
+        all_filename=all_filename_prefix + "_snv",
+        train_filename=train_filename_prefix + "_snv",
+        test_filename=test_filename_prefix + "_snv",
+    )
+    X_cnv = merge_mutations_with_phenotype_data(snv_mutations_transposed, phenotypes)
+    data_frame_to_disk(
+        X_cnv,
+        all_filename=all_filename_prefix + "_cnv",
+        train_filename=train_filename_prefix + "_cnv",
+        test_filename=test_filename_prefix + "_cnv",
+    )
+
+
+def data_frame_to_disk(
+    X: pd.DataFrame,
+    all_filename: str,
+    train_filename: str,
+    test_filename: str,
+    random_state: int = 1234,
+):
+    """
+    Write data to disk.
+    """
+    f_test = 0.3
+    X_train, X_test = train_test_split(X, test_size=f_test, random_state=random_state)
+    X.to_csv(all_filename + ".tsv", sep="\t")
+    X.to_excel(all_filename + ".xlsx")
+    # X.to_sav(all_filename + ".sav")
+    X_train.to_csv(train_filename + ".tsv", sep="\t")
+    X_test.to_csv(test_filename + ".tsv", sep="\t")
+
+
+def clean_and_transpose_data_frame(
+    mutation_data_frame: pd.DataFrame,
+    columns_to_transform: list,
+    transformation: Callable,
+) -> pd.DataFrame:
+    """
+    Clean up data frame records, verify consistency, and transpose to gene columns.
+    """
+    # Vocabulary is the entire gene dataset.
+    gene_vocabulary = mutation_data_frame["Gene"].unique()
+
+    # Convert columns to numbers and drop rows with missing data.
     clean_patient_mutations, dirty_patient_mutations = clean_mutation_columns(
-        patient_mutations,
-        columns_to_number=allele_columns,
-        # fill_ND=0.0
+        mutation_data_frame, columns_to_number=columns_to_transform
     )
 
     clean_patients = clean_patient_mutations["Patient ID"].unique()
@@ -283,49 +354,41 @@ def load_process_and_store_spreadsheets(
 
     # Verify that the combination of the patients must give all patients.
     assert set(clean_patients).union(set(dirty_patients)) == set(
-        patient_mutations["Patient ID"].unique()
+        mutation_data_frame["Patient ID"].unique()
     )
-
-    # # Verify that all of the patients are in the `clean_patients` records.
-    # assert set(dirty_patients).issubset(set(clean_patients))
 
     # Verify that there are no more NA values.
     assert (
-        clean_patient_mutations[allele_columns].dropna().shape[0]
-        == clean_patient_mutations[allele_columns].shape[0]
+        clean_patient_mutations[columns_to_transform].dropna().shape[0]
+        == clean_patient_mutations[columns_to_transform].shape[0]
     )
     # And that everything went in to the "dirty" records.
-    assert dirty_patient_mutations[allele_columns].dropna().shape[0] == 0
+    assert dirty_patient_mutations[columns_to_transform].dropna().shape[0] == 0
 
-    # Perform `transformation` on `allele_columns`. That is, calculate change in
-    # DNA mutation.
+    # Perform `transformation` on the columns. That is, calculate change in DNA
+    # mutation.
     patient_mutation_frequencies = patient_allele_frequencies(
         clean_patient_mutations,
         gene_vocabulary,
-        allele_columns=allele_columns,
+        allele_columns=columns_to_transform,
         transformation=transformation,
     )
+    return patient_mutation_frequencies
 
-    # Don't forget about patient for which no mutations where found.
-    patient_mutation_frequencies = add_mutationless_patients(
-        patient_mutation_frequencies, patient_no_mutations
-    )
+
+def merge_mutations_with_phenotype_data(
+    transposed_mutation_data_frame: pd.DataFrame, phenotype_data_frame: pd.DataFrame
+) -> pd.DataFrame:
     phenotypes_to_keep = phenotype_features + phenotype_labels
     # Combine mutation data and phenotype data.
     X = pd.merge(
-        left=patient_mutation_frequencies,
-        right=phenotypes[phenotypes_to_keep],
+        left=transposed_mutation_data_frame,
+        right=phenotype_data_frame[phenotypes_to_keep],
         left_index=True,
         right_index=True,
     )
     X.dropna(subset=["response_grouped"], inplace=True)
-
-    f_test = 0.3
-    X_train, X_test = train_test_split(X, test_size=f_test, random_state=random_state)
-    # Write data to disk.
-    X.to_csv(all_filename, sep="\t")
-    X_train.to_csv(train_filename, sep="\t")
-    X_test.to_csv(test_filename, sep="\t")
+    return X
 
 
 def survival_histograms(y, hist_bins: int = 10, cum_hist_bins: int = 15):
