@@ -213,11 +213,11 @@ def pipeline_Freeman(Estimator, **kwargs):
                 OneHotEncoder(handle_unknown="ignore"),
                 categorical_input_columns,
             ),
-            # (
-            #     "age_discretizer",
-            #     KBinsDiscretizer(n_bins=3, encode="onehot"),
-            #     ["leeftijd"],
-            # ),
+            (
+                "age_discretizer",
+                KBinsDiscretizer(n_bins=3, encode="onehot"),
+                ["leeftijd"],
+            ),
         ],
         remainder="passthrough",
     )
@@ -225,12 +225,12 @@ def pipeline_Freeman(Estimator, **kwargs):
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
         steps=[
-            # (
-            #     "filter_rare_mutations",
-            #     SparseFeatureFilter(
-            #         top_k_features=6, columns_to_consider=mutation_columns
-            #     ),
-            # ),
+            (
+                "filter_rare_mutations",
+                SparseFeatureFilter(
+                    top_k_features=6, columns_to_consider=mutation_columns
+                ),
+            ),
             (
                 "category_grouper",
                 MergeRareCategories(

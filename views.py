@@ -269,7 +269,7 @@ def view_linear_model_julian(X, y, p_julian):
     """
     coeff_mean, coeff_std = fit_model_coefficients(X, y, p_julian)
 
-    column_names = p_julian.steps[-2][1].columns_to_keep_
+    column_names = p_julian.steps[-2][1].columns_to__
     with sns.plotting_context(font_scale=1.5):
         plt.xlabel(r"Slope")
         sns.barplot(x=coeff_mean, xerr=coeff_std, y=column_names, label="large")

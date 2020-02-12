@@ -75,28 +75,20 @@ def single_out_no_mutation_patients(spread_sheet_filename: str) -> pd.Series:
 
 
 def load_avenio_files(
-    spread_sheet_filename: str = "2019-08-27_PLASMA_DEFAULT_Results_Groningen.xlsx",
+    spread_sheet_filename: str = "2019-02-12_FINAL_RESULTS_SomaticAll.xlsx",
     spss_filename: str = "phenotypes_20191018.sav",
 ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """
     Load the mutation spreadsheet and SPSS phenotype data in two data frames.
     """
     # Load data from spreadsheet.
-    mutation_data_frame = pd.read_excel(spread_sheet_filename, sheet_name=2)
+    mutation_data_frame = pd.read_excel(spread_sheet_filename, sheet_name=3)
     # Load the phenotypes from SPSS file.
     phenotypes = pd.read_spss(spss_filename)
 
-    # Extract list of patients with no mutations, removing potential duplicates.
-    no_mutation_found_patients = single_out_no_mutation_patients(
-        spread_sheet_filename
-    ).unique()
-
-    # Identify patients for which with missing sequencing data.
-    no_mutation_patient_spss = phenotypes[phenotypes["VAR00001"].isna()]["studynumber"]
-
-    # The mutation spreadsheet doesn't have all the data yet, so it must be a
-    # subset of all the patients.
-    assert set(no_mutation_found_patients).issubset(no_mutation_patient_spss)
+    no_mutation_found_patients = set(phenotypes["studynumber"]) - set(
+        mutation_data_frame["Patient ID"]
+    )
 
     # And set Patient ID as index.
     phenotypes["studynumber"].name = "Patient ID"
@@ -107,7 +99,7 @@ def load_avenio_files(
 
     return (
         mutation_data_frame,
-        no_mutation_found_patients,
+        pd.Series(tuple(no_mutation_found_patients)),
         categorical_columns_to_lower(phenotypes),
     )
 

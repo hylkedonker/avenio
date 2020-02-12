@@ -245,7 +245,7 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
 
 
 def load_process_and_store_spreadsheets(
-    spread_sheet_filename: str = "2019-08-27_PLASMA_DEFAULT_Results_Groningen.xlsx",
+    spread_sheet_filename: str = "2019-02-12_FINAL_RESULTS_SomaticAll.xlsx",
     spss_filename: str = "phenotypes_20191018.sav",
     transformation: Callable = lambda x, y: y - x,
     allele_columns: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
@@ -346,3 +346,67 @@ def survival_histograms(y, hist_bins: int = 10, cum_hist_bins: int = 15):
     n_survive = n_survive[:-1]
 
     return ((t, p), (t_cum, n_survive))
+
+
+def merge_mutation_spreadsheet_t0_with_t1(spread_sheet):
+    """
+    The mutation spreadsheet contains rows for t0 and for t1. Merge these rows.
+    """
+    # Determine whether it is t0 or t1 measurement.
+    spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(
+        lambda x: int(x.split("_")[1])
+    )
+    # Replace NA with empty string in order to join the rows using pandas.
+    spread_sheet["Coding Change"] = (
+        spread_sheet["Coding Change"].astype("string").fillna("")
+    )
+
+    # This triplet uniquely defines a record.
+    join_columns = ["Patient ID", "Gene", "Coding Change"]
+
+    # Split the spreadsheet in two: One for time point t0, and one for t1.
+    t0_samples = spread_sheet["Sample ID"] == 0
+    t1_samples = spread_sheet["Sample ID"] == 1
+    # Ignore all samples that are not 0 or 1.
+    data_frame_t0 = spread_sheet[t0_samples]
+    data_frame_t1 = spread_sheet[t1_samples]
+
+    # Verify the assumption that the `join_columns` triplet is unique.
+    assert len(data_frame_t0[data_frame_t0[join_columns].duplicated()]) == 0
+    assert len(data_frame_t1[data_frame_t1[join_columns].duplicated()]) == 0
+
+    # Change the column names according to timepoint.
+    t0_new_names = {
+        "Allele Fraction": "T0: Allele Fraction",
+        "No. Mutant Molecules per mL": "T0: Mutant concentration",
+        "CNV Score": "T0: CNV Score",
+    }
+    t1_new_names = {
+        "Allele Fraction": "T1: Allele Fraction",
+        "No. Mutant Molecules per mL": "T1: Mutant concentration",
+        "CNV Score": "T1: CNV Score",
+    }
+    data_frame_t0 = data_frame_t0.rename(columns=t0_new_names).copy()
+    data_frame_t1 = data_frame_t1.rename(columns=t1_new_names)
+
+    # Ignore all but the following three columns.
+    columns_to_add = [
+        "T1: Allele Fraction",
+        "T1: Mutant concentration",
+        "T1: CNV Score",
+    ]
+    data_frame_t1 = data_frame_t1[join_columns + columns_to_add]
+
+    # Merge the two data frames back together.
+    merged_data_frame = data_frame_t0.set_index(
+        ["Patient ID", "Gene", "Coding Change"]
+    ).join(
+        data_frame_t1.set_index(["Patient ID", "Gene", "Coding Change"]), how="outer"
+    )
+
+    # Keep only the columns we are interested in.
+    merged_column_names = list(sorted(t0_new_names.values())) + list(
+        sorted(t1_new_names.values())
+    )
+    merged_data_frame = merged_data_frame[merged_column_names]
+    return merged_data_frame.copy()
