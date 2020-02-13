@@ -190,14 +190,7 @@ def get_top_correlated(
 
 
 def clean_mutation_columns(
-    input_data: pd.DataFrame,
-    columns_to_number=[
-        "T0: Allele Fraction",
-        "T1: Allele Fraction",
-        "T0: Mutant concentration",
-        "T1: Mutant concentration",
-    ],
-    fill_ND=None,
+    input_data: pd.DataFrame, columns_to_number: list, fill_ND=None
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Seperate data in a clean, converted set, and the remainder, cotaining missing
@@ -215,9 +208,10 @@ def clean_mutation_columns(
             return float(input_element.rstrip(r"%")) / 100.0
         return input_element
 
-    # 1) Replace ND values with NA.
-    clean_data[columns_to_number] = clean_data.loc[:, columns_to_number].replace(
-        "ND", fill_ND
+    # 1) Replace "ND" and "Absent" values with NA.
+    na_map = {"ND": fill_ND, "Absent": fill_ND}
+    clean_data[columns_to_number] = clean_data.loc[:, columns_to_number].applymap(
+        lambda x: na_map[x] if x in na_map else x
     )
 
     for column_name in columns_to_number:
@@ -248,70 +242,65 @@ def load_process_and_store_spreadsheets(
     spread_sheet_filename: str = "2019-02-12_FINAL_RESULTS_SomaticAll.xlsx",
     spss_filename: str = "phenotypes_20191018.sav",
     transformation: Callable = lambda x, y: y - x,
-    allele_columns: List[str] = ["T0: Allele Fraction", "T1: Allele Fraction"],
+    columns: List[str] = [
+        "Allele Fraction",
+        "No. Mutant Molecules per mL",
+        "CNV Score",
+    ],
     all_filename_prefix: str = "output/all",
     train_filename_prefix: str = "output/train",
     test_filename_prefix: str = "output/test",
 ):
     """
-    Read, clean, transform and store raw data.
+    Read, clean, transform, and store raw data.
 
     1) Load the mutation Excel spreadsheet and the phenotype SPSS file.
-    2) Transform the mutation columns.
+    2) Transform and transpose the mutation columns.
     3) Combine mutation and phenotype data.
     4) Split and store data to disk.
     """
     # Load data from spreadsheet and SPSS files.
-    patient_mutations, patient_no_mutations, phenotypes = load_avenio_files(
+    patient_mutations, phenotypes = load_avenio_files(
         spread_sheet_filename, spss_filename
     )
 
     # Combine the T0 and T1 measurements in a single record.
-    spread_sheet = merge_mutation_spreadsheet_t0_with_t1(patient_mutations)
+    spread_sheet = merge_mutation_spreadsheet_t0_with_t1(patient_mutations, columns)
 
-    # Partition the data in SNV and CNV mutations.
-    snv_columns = [
-        "T0: Allele Fraction",
-        "T0: Mutant concentration",
-        "T1: Allele Fraction",
-        "T1: Mutant concentration",
-    ]
-    cnv_columns = ["T0: CNV Score", "T1: CNV Score"]
+    # Make a different document for each of the column pairs.
+    for column in columns:
+        column_pair = [f"T0: {column}", f"T1: {column}"]
+        # Filter out the column pairs, and remove empty fields.
+        mutations = spread_sheet[column_pair].dropna(how="all").fillna(0).reset_index()
+        # Repair dirty cells, transpose the data and carry out the transformation.
+        mutations_transposed = clean_and_transpose_data_frame(
+            mutations, column_pair, transformation
+        )
 
-    # Missing values imply zero mutations.
-    snv_mutations = spread_sheet[snv_columns].dropna(how="all").fillna(0).reset_index()
-    # Missing values imply no copies (CNV score of zero).
-    cnv_mutations = spread_sheet[cnv_columns].dropna(how="all").fillna(0).reset_index()
+        # Add the patients that are not in the mutation list.
+        patient_no_mutations = set(phenotypes["studynumber"]) - set(
+            mutations_transposed.index
+        )
+        # Make the difference set ordered using `tuple`, and then convert to a Series.
+        patient_no_mutations = pd.Series(tuple(patient_no_mutations))
+        mutations_transposed = add_mutationless_patients(
+            mutations_transposed, patient_no_mutations
+        )
+        # Merge with clinical data.
+        final_spreadsheet = merge_mutations_with_phenotype_data(
+            mutations_transposed, phenotypes
+        )
 
-    snv_mutations_transposed = clean_and_transpose_data_frame(
-        snv_mutations, allele_columns, transformation
-    )
-    cnv_mutations_transposed = clean_and_transpose_data_frame(
-        cnv_mutations, cnv_columns, transformation
-    )
+        # Check that all patients are included.
+        assert final_spreadsheet.shape[0] == phenotypes.shape[0]
 
-    # Don't forget about patient for which no mutations where found.
-    snv_mutations_transposed = add_mutationless_patients(
-        snv_mutations_transposed, patient_no_mutations
-    )
-    cnv_mutations_transposed = add_mutationless_patients(
-        cnv_mutations_transposed, patient_no_mutations
-    )
-
-    X_snv = merge_mutations_with_phenotype_data(snv_mutations_transposed, phenotypes)
-    data_frame_to_disk(
-        X_snv,
-        all_filename=all_filename_prefix + "_snv",
-        train_filename=train_filename_prefix + "_snv",
-        test_filename=test_filename_prefix + "_snv",
-    )
-    X_cnv = merge_mutations_with_phenotype_data(snv_mutations_transposed, phenotypes)
-    data_frame_to_disk(
-        X_cnv,
-        all_filename=all_filename_prefix + "_cnv",
-        train_filename=train_filename_prefix + "_cnv",
-        test_filename=test_filename_prefix + "_cnv",
-    )
+        # And store to disk.
+        data_frame_to_disk(
+            final_spreadsheet,
+            all_filename=all_filename_prefix + f"_{column}",
+            train_filename=train_filename_prefix + f"_{column}",
+            test_filename=test_filename_prefix + f"_{column}",
+        )
 
 
 def data_frame_to_disk(
@@ -341,9 +330,6 @@ def clean_and_transpose_data_frame(
     """
     Clean up data frame records, verify consistency, and transpose to gene columns.
     """
-    # Vocabulary is the entire gene dataset.
-    gene_vocabulary = mutation_data_frame["Gene"].unique()
-
     # Convert columns to numbers and drop rows with missing data.
     clean_patient_mutations, dirty_patient_mutations = clean_mutation_columns(
         mutation_data_frame, columns_to_number=columns_to_transform
@@ -364,6 +350,9 @@ def clean_and_transpose_data_frame(
     )
     # And that everything went in to the "dirty" records.
     assert dirty_patient_mutations[columns_to_transform].dropna().shape[0] == 0
+
+    # Vocabulary is the entire gene dataset.
+    gene_vocabulary = clean_patient_mutations["Gene"].unique()
 
     # Perform `transformation` on the columns. That is, calculate change in DNA
     # mutation.
@@ -411,7 +400,9 @@ def survival_histograms(y, hist_bins: int = 10, cum_hist_bins: int = 15):
     return ((t, p), (t_cum, n_survive))
 
 
-def merge_mutation_spreadsheet_t0_with_t1(spread_sheet):
+def merge_mutation_spreadsheet_t0_with_t1(
+    spread_sheet: pd.DataFrame, columns: List[str]
+) -> pd.DataFrame:
     """
     The mutation spreadsheet contains rows for t0 and for t1. Merge these rows.
     """
@@ -439,26 +430,15 @@ def merge_mutation_spreadsheet_t0_with_t1(spread_sheet):
     assert len(data_frame_t1[data_frame_t1[join_columns].duplicated()]) == 0
 
     # Change the column names according to timepoint.
-    t0_new_names = {
-        "Allele Fraction": "T0: Allele Fraction",
-        "No. Mutant Molecules per mL": "T0: Mutant concentration",
-        "CNV Score": "T0: CNV Score",
-    }
-    t1_new_names = {
-        "Allele Fraction": "T1: Allele Fraction",
-        "No. Mutant Molecules per mL": "T1: Mutant concentration",
-        "CNV Score": "T1: CNV Score",
-    }
+    t0_new_names = {column: f"T0: {column}" for column in columns}
+    t1_new_names = {column: f"T1: {column}" for column in columns}
     data_frame_t0 = data_frame_t0.rename(columns=t0_new_names).copy()
     data_frame_t1 = data_frame_t1.rename(columns=t1_new_names)
 
-    # Ignore all but the following three columns.
-    columns_to_add = [
-        "T1: Allele Fraction",
-        "T1: Mutant concentration",
-        "T1: CNV Score",
-    ]
-    data_frame_t1 = data_frame_t1[join_columns + columns_to_add]
+    # Ignore all but the columns that uniquely identify a record, plus the columns of
+    # interest.
+    t1_columns_to_keep = join_columns + list(sorted(t1_new_names.values()))
+    data_frame_t1 = data_frame_t1[t1_columns_to_keep]
 
     # Merge the two data frames back together.
     merged_data_frame = data_frame_t0.set_index(
@@ -467,7 +447,8 @@ def merge_mutation_spreadsheet_t0_with_t1(spread_sheet):
         data_frame_t1.set_index(["Patient ID", "Gene", "Coding Change"]), how="outer"
     )
 
-    # Keep only the columns we are interested in.
+    # Keep only the columns we are interested in (i.e., remove the remaining columns
+    # from t0).
     merged_column_names = list(sorted(t0_new_names.values())) + list(
         sorted(t1_new_names.values())
     )

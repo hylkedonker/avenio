@@ -86,10 +86,6 @@ def load_avenio_files(
     # Load the phenotypes from SPSS file.
     phenotypes = pd.read_spss(spss_filename)
 
-    no_mutation_found_patients = set(phenotypes["studynumber"]) - set(
-        mutation_data_frame["Patient ID"]
-    )
-
     # And set Patient ID as index.
     phenotypes["studynumber"].name = "Patient ID"
     phenotypes.set_index(phenotypes["studynumber"].astype(int), inplace=True)
@@ -97,11 +93,7 @@ def load_avenio_files(
     columns_to_int = ["stage", "therapyline"]
     phenotypes[columns_to_int] = phenotypes[columns_to_int].astype(int)
 
-    return (
-        mutation_data_frame,
-        pd.Series(tuple(no_mutation_found_patients)),
-        categorical_columns_to_lower(phenotypes),
-    )
+    return (mutation_data_frame, categorical_columns_to_lower(phenotypes))
 
 
 def add_mutationless_patients(
