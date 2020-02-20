@@ -181,3 +181,38 @@ target_genes = [
     "ZNF521",
     "ZSCAN1",
 ]
+
+
+# Phenotype features that serve as input for the model.
+phenotype_features = [
+    "gender",
+    "leeftijd",
+    "stage",
+    "therapyline",
+    "smokingstatus",
+    "Systemischetherapie",
+    "histology_grouped",
+    "lymfmeta",
+    "brainmeta",
+    "adrenalmeta",
+    "livermeta",
+    "lungmeta",
+    "skeletonmeta",
+]
+
+# From those listed above, the following columns are categorical (not counting
+# the labels).
+categorical_phenotypes = [
+    "gender",
+    "stage",
+    "therapyline",
+    "smokingstatus",
+    "Systemischetherapie",
+    "histology_grouped",
+    "lymfmeta",
+    "brainmeta",
+    "adrenalmeta",
+    "livermeta",
+    "lungmeta",
+    "skeletonmeta",
+]

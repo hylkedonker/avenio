@@ -5,11 +5,12 @@ import pandas as pd
 import scipy as sp
 from sklearn.model_selection import train_test_split
 
+from const import phenotype_features
 from source import (
     add_mutationless_patients,
     load_avenio_files,
-    phenotype_features,
     phenotype_labels,
+    read_preprocessed_data,
 )
 
 
@@ -313,7 +314,8 @@ def data_frame_to_disk(
     """
     Write data to disk.
     """
-    f_test = 0.3
+    f_test = 0.2
+    X.sort_index(inplace=True)
     X_train, X_test = train_test_split(X, test_size=f_test, random_state=random_state)
     X.to_csv(all_filename + ".tsv", sep="\t")
     X.to_excel(all_filename + ".xlsx")
@@ -454,3 +456,43 @@ def merge_mutation_spreadsheet_t0_with_t1(
     )
     merged_data_frame = merged_data_frame[merged_column_names]
     return merged_data_frame.copy()
+
+
+def combine_tsv_files(
+    sheet_a: str, sheet_b: str, suffixes=("_snv", "_cnv")
+) -> pd.DataFrame:
+    """
+    Merge two TSV files with the same Patient ID indices.
+    """
+    X_train_a, y_train_a = read_preprocessed_data(sheet_a)
+    X_train_b, y_train_b = read_preprocessed_data(sheet_b)
+
+    # Check consistency of data frames and combine.
+    assert set(X_train_a.index.unique()) == set(X_train_b.index.unique())
+
+    # Remove phenotype columns to get the genetic columns.
+    genetic_columns_b = list(set(X_train_b.columns) - set(phenotype_features))
+    genetic_columns_b.sort()
+    # We want to rename only the genetic columns, not the phenotypes.
+    genetic_columns_a = list(set(X_train_a.columns) - set(phenotype_features))
+    rename_table_a = {
+        column_name: column_name + suffixes[0] for column_name in genetic_columns_a
+    }
+
+    # Merge the feature and the label frames.
+    X_train = X_train_a.rename(columns=rename_table_a).merge(
+        X_train_b[genetic_columns_b].rename(columns=lambda x: x + suffixes[1]),
+        left_index=True,
+        right_index=True,
+        how="outer",
+        suffixes=suffixes,
+    )
+    columns_to_drop = [c for c in X_train.columns if "_y" in c]
+    X_train.drop(columns=columns_to_drop, inplace=True)
+    assert y_train_a.equals(y_train_b)
+    y_train = y_train_a.copy()
+
+    # Validate consistency of features with labels.
+    assert set(X_train.index.unique()) == set(y_train.index.unique())
+
+    return X_train, y_train

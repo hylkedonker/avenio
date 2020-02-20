@@ -31,28 +31,13 @@ from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import numpy as np
 
-from source import phenotype_features
+from const import categorical_phenotypes as categorical_input_columns
+from const import phenotype_features
 from models import Gene2Vec, MergeRareCategories, SparseFeatureFilter
 
 
 RANDOM_STATE = 1234
 
-# From those listed above, the following columns are categorical (not counting
-# the labels).
-categorical_input_columns = [
-    "gender",
-    "stage",
-    "therapyline",
-    "smokingstatus",
-    "Systemischetherapie",
-    "histology_grouped",
-    "lymfmeta",
-    "brainmeta",
-    "adrenalmeta",
-    "livermeta",
-    "lungmeta",
-    "skeletonmeta",
-]
 mutation_columns = [
     "TP53",
     "KRAS",
@@ -419,6 +404,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "solver": "saga",
             "l1_ratio": 0.5,
             "C": 1.0,
+            "max_iter": 5000,
         },
         SVC: {
             "random_state": random_state,
@@ -477,14 +463,32 @@ def calculate_pass_through_column_names_Richard(pipeline):
     return columns
 
 
-def reconstruct_categorical_variable_names_Richard(pipeline):
+def calculate_pass_through_column_names_Freeman(pipeline):
+    """
+    Determine the column names that pass unaltered through the Freeman pipeline.
+    """
+    feature_filter = pipeline.steps[0][1]
+    columns = [
+        column
+        for column in feature_filter.columns_to_keep_
+        if column not in categorical_input_columns
+        if column not in phenotypes_to_drop
+    ]
+    # Remove age column, if necessary.
+    column_transformer = pipeline.steps[-2][1]
+    if "age_discretizer" in column_transformer.named_transformers_:
+        columns.remove("leeftijd")
+    return columns
+
+
+def reconstruct_categorical_variable_names(pipeline):
     """
     Determine the column names of the input columns entering Richard's classifier.
     """
     # Take the transformer right before the classifier.
     column_transformer = pipeline.steps[-2][1]
     # Consistency check: The column transformer should only contain the one hot encoder.
-    assert len(column_transformer.transformers_) == 2
+    assert len(column_transformer.transformers_) == 3
 
     # Get the column names that are transformed.
     # 1) One-hot-encoder.

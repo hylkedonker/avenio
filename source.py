@@ -10,24 +10,6 @@ RANDOM_STATE = 1234
 np.random.seed(RANDOM_STATE)
 
 
-# Phenotype features that serve as input for the model.
-phenotype_features = [
-    "gender",
-    "leeftijd",
-    "stage",
-    "therapyline",
-    "smokingstatus",
-    "Systemischetherapie",
-    "histology_grouped",
-    "lymfmeta",
-    "brainmeta",
-    "adrenalmeta",
-    "livermeta",
-    "lungmeta",
-    "skeletonmeta",
-]
-
-
 # Phenotype labels that we wish to predict.
 phenotype_labels = [
     "Clinical_Response",

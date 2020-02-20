@@ -17,7 +17,8 @@ from fit import categorical_signal, fit_categorical_survival
 from models import SparseFeatureFilter
 from pipelines import (
     calculate_pass_through_column_names_Richard,
-    reconstruct_categorical_variable_names_Richard,
+    calculate_pass_through_column_names_Freeman,
+    reconstruct_categorical_variable_names,
 )
 from utils import bootstrap
 
@@ -224,7 +225,21 @@ def remove_parallel_coefficients(coeff_mean, coeff_std, names):
     return coef_mean_new, coef_std_new, name_new
 
 
-@bootstrap(k=3)
+def remove_coefficients_below_thresshold(coeff_mean, coeff_std, names, thresshold=0.05):
+    """
+    Remove coefficients for which the magnitude |c_i| < thresshold.
+    """
+    name_new, coef_mean_new, coef_std_new = [], [], []
+    for i, y_i in enumerate(coeff_mean):
+        if abs(y_i) > thresshold:
+            name_new.append(names[i])
+            coef_mean_new.append(y_i)
+            coef_std_new.append(coeff_std[i])
+
+    return coef_mean_new, coef_std_new, name_new
+
+
+@bootstrap(k=5)
 def fit_model_coefficients(X_train, y_train, X_test, y_test, pipeline):
     """
     Fit coefficients only, ignore test data.
@@ -234,7 +249,7 @@ def fit_model_coefficients(X_train, y_train, X_test, y_test, pipeline):
     """
     pipeline.fit(X_train, y_train)
     estimator = pipeline.named_steps["estimator"]
-    return estimator.coef_
+    return estimator.coef_.flatten()
 
 
 def view_linear_model_richard(X, y, pipeline):
@@ -247,7 +262,7 @@ def view_linear_model_richard(X, y, pipeline):
 
     variable_names = []
     # Generate variable names of the one hot encoded categorical data.
-    variable_names.extend(reconstruct_categorical_variable_names_Richard(pipeline))
+    variable_names.extend(reconstruct_categorical_variable_names(pipeline))
     # Concatenate with unaltered phenotype columns.
     variable_names.extend(calculate_pass_through_column_names_Richard(pipeline))
 
@@ -304,3 +319,90 @@ def view_decision_tree_julian(pipeline, save_to: Optional[str] = None):
         g.render(filename, format=extension)
 
     return g
+
+
+def view_linear_model_freeman(X, y, pipeline):
+    """
+    Infer the variable names and plot the coefficients.
+    """
+    # Calculate coefficients' mean and standard deviation of the bootstrapped model.
+    bootstrapped_coefficients = fit_model_coefficients(X, y, pipeline)
+    coeff_mean, coeff_std = bootstrapped_coefficients
+
+    # Generate variable names of the one hot encoded categorical data.
+    clinical_variable_names = reconstruct_categorical_variable_names(pipeline)
+    # Concatenate with unaltered columns. The remaining variables are the genetic ones.
+    genetic_variable_names = calculate_pass_through_column_names_Freeman(pipeline)
+
+    # Seperate the variables in clinical variables, and genetic variables.
+    number_clinical_vars = len(clinical_variable_names)
+    coeff_mean_clinical = coeff_mean[:number_clinical_vars]
+    coeff_std_clinical = coeff_std[:number_clinical_vars]
+    coeff_mean_genetic = coeff_mean[number_clinical_vars:]
+    coeff_std_genetic = coeff_std[number_clinical_vars:]
+
+    # Make a plot for the clinical data.
+    with sns.plotting_context(font_scale=1.5):
+        # Remove uninformative conjugate variables, due to one-hot-encoding.
+        coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_parallel_coefficients(
+            coeff_mean_clinical, coeff_std_clinical, clinical_variable_names
+        )
+        coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_coefficients_below_thresshold(
+            coeff_mean_clinical,
+            coeff_std_clinical,
+            clinical_variable_names,
+            thresshold=0.05,
+        )
+
+        plt.figure(figsize=(8, 6))
+        plt.title("Clinical variables")
+        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > 0.05$)")
+        sns.barplot(
+            x=coeff_mean_clinical,
+            xerr=coeff_std_clinical,
+            y=clinical_variable_names,
+            label="large",
+        )
+        plt.tight_layout()
+        plt.savefig(
+            "figs/logistic_regression_clinical_freeman.png", bbox_inches="tight"
+        )
+        plt.savefig(
+            "figs/logistic_regression_clinical_freeman.eps", bbox_inches="tight"
+        )
+
+    # And a seperate figure for the genetic data.
+    with sns.plotting_context(font_scale=1.5):
+        # Remove very small coefficients.
+        coeff_mean_genetic, coeff_std_genetic, genetic_variable_names = remove_coefficients_below_thresshold(
+            coeff_mean_genetic,
+            coeff_std_genetic,
+            genetic_variable_names,
+            thresshold=0.05,
+        )
+        plt.figure(figsize=(8, 6))
+        plt.title("Genetic variables")
+        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > 0.05$)")
+        sns.barplot(
+            x=coeff_mean_genetic,
+            xerr=coeff_std_genetic,
+            y=genetic_variable_names,
+            label="large",
+        )
+        plt.tight_layout()
+        plt.savefig("figs/logistic_regression_genetic_freeman.png", bbox_inches="tight")
+        plt.savefig("figs/logistic_regression_genetic_freeman.eps", bbox_inches="tight")
+
+
+# from sklearn.linear_model import LogisticRegression
+# from transform import combine_tsv_files
+# from pipelines import benchmark_pipelines, build_classifier_pipelines, pipeline_Freeman
+
+# # Harmonic mean genomic variable.
+# X_train_hm, y_train_hm = combine_tsv_files(
+#     "output/train__harmonic_mean__Allele Fraction.tsv",
+#     "output/train__harmonic_mean__CNV Score.tsv",
+# )
+# y_train_resp = y_train_hm["response_grouped"]
+# logistic_Freeman = pipeline_Freeman(LogisticRegression)
+# view_linear_model_freeman(X_train_hm, y_train_resp, logistic_Freeman)
