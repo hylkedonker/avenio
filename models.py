@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 
 from catboost import CatBoostClassifier
 import gensim
@@ -10,6 +10,50 @@ from sklearn.utils import safe_mask
 
 from const import target_genes
 from utils import get_categorical_columns
+
+
+class AggregateColumns(BaseEstimator, TransformerMixin):
+    """
+    Apply aggregation to a set of columns.
+    """
+
+    def __init__(
+        self,
+        columns: list,
+        aggregate_function: Callable,
+        aggregate_column_name: Optional[str] = None,
+    ):
+        self.columns_ = columns
+        self.aggregate_function_ = aggregate_function
+
+        self.aggregate_column_name_ = aggregate_column_name
+        if self.aggregate_column_name_ is None:
+            self.aggregate_column_name_ = aggregate_function.__name__
+
+    def fit(self, X, y=None):
+        """
+        Check consistency of variables.
+        """
+        if not isinstance(X, pd.DataFrame):
+            raise NotImplementedError("Does not yet support non-pandas inputs.")
+
+        if not set(self.columns_).issubset(set(X.columns)):
+            raise KeyError("Not all columns found in `X`.")
+
+        return self
+
+    def transform(self, X, y=None):
+        """
+        Apply the transformation column-wise.
+        """
+        # Columns that should be left untouched in the transformation.
+        passthrough_columns = set(X.columns) - set(self.columns_)
+
+        X_transformed = X[passthrough_columns].copy()
+        X_transformed[self.aggregate_column_name_] = X[self.columns_].apply(
+            self.aggregate_function_, axis=1
+        )
+        return X_transformed
 
 
 class SparseFeatureFilter(BaseEstimator, TransformerMixin):

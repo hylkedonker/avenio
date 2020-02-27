@@ -6,6 +6,7 @@ import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
 
 from models import (
+    AggregateColumns,
     ClassifierAsTransformer,
     Gene2Vec,
     MergeRareCategories,
@@ -234,3 +235,35 @@ class TestMergeRareCategories(unittest.TestCase):
             ),
             default_cats_transformed,
         )
+
+
+class TestAggregateColumns(unittest.TestCase):
+    def test_transformation(self):
+        """
+        Test the calculation of column-wise aggregated results.
+        """
+        num_rows = 3
+        X = pd.DataFrame({"a": np.ones(num_rows), "b": np.arange(num_rows)})
+        transformer = AggregateColumns(columns=["a", "b"], aggregate_function=np.sum)
+        X_prime = transformer.fit_transform(X)
+        np.testing.assert_array_equal(X_prime, X.sum(axis=1).values.reshape(-1, 1))
+
+    def test_pass_through_columns(self):
+        """
+        Test that not all columns are affected.
+        """
+        num_rows = 3
+        X = pd.DataFrame(
+            {
+                "c": np.linspace(0, 1, num_rows),
+                "a": np.ones(num_rows),
+                "b": np.arange(num_rows),
+            }
+        )
+
+        transformer = AggregateColumns(columns=["a", "b"], aggregate_function=np.mean)
+        X_prime = transformer.fit_transform(X)
+        # Check that column "c" is unaffected.
+        np.testing.assert_array_equal(X["c"], X_prime["c"])
+        # And that the other column is indeed the average.
+        np.testing.assert_array_equal(X[["a", "b"]].mean(axis=1), X_prime["mean"])
