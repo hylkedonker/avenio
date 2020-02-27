@@ -321,7 +321,7 @@ def view_decision_tree_julian(pipeline, save_to: Optional[str] = None):
     return g
 
 
-def view_linear_model_freeman(X, y, pipeline):
+def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     """
     Infer the variable names and plot the coefficients.
     """
@@ -351,12 +351,12 @@ def view_linear_model_freeman(X, y, pipeline):
             coeff_mean_clinical,
             coeff_std_clinical,
             clinical_variable_names,
-            thresshold=0.05,
+            thresshold=thresshold,
         )
 
         plt.figure(figsize=(8, 6))
         plt.title("Clinical variables")
-        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > 0.05$)")
+        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > {:.2f}$)".format(thresshold))
         sns.barplot(
             x=coeff_mean_clinical,
             xerr=coeff_std_clinical,
@@ -364,12 +364,9 @@ def view_linear_model_freeman(X, y, pipeline):
             label="large",
         )
         plt.tight_layout()
-        plt.savefig(
-            "figs/logistic_regression_clinical_freeman.png", bbox_inches="tight"
-        )
-        plt.savefig(
-            "figs/logistic_regression_clinical_freeman.eps", bbox_inches="tight"
-        )
+        if filenames:
+            plt.savefig("figs/{}.png".format(filenames[0]), bbox_inches="tight")
+            plt.savefig("figs/{}.eps".format(filenames[0]), bbox_inches="tight")
 
     # And a seperate figure for the genetic data.
     with sns.plotting_context(font_scale=1.5):
@@ -378,11 +375,11 @@ def view_linear_model_freeman(X, y, pipeline):
             coeff_mean_genetic,
             coeff_std_genetic,
             genetic_variable_names,
-            thresshold=0.05,
+            thresshold=thresshold,
         )
         plt.figure(figsize=(8, 6))
         plt.title("Genetic variables")
-        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > 0.05$)")
+        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > {:.2f}$)".format(thresshold))
         sns.barplot(
             x=coeff_mean_genetic,
             xerr=coeff_std_genetic,
@@ -390,8 +387,8 @@ def view_linear_model_freeman(X, y, pipeline):
             label="large",
         )
         plt.tight_layout()
-        plt.savefig("figs/logistic_regression_genetic_freeman.png", bbox_inches="tight")
-        plt.savefig("figs/logistic_regression_genetic_freeman.eps", bbox_inches="tight")
+        plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")
+        plt.savefig("figs/{}.eps".format(filenames[1]), bbox_inches="tight")
 
 
 # from sklearn.linear_model import LogisticRegression

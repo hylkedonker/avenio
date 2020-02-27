@@ -331,14 +331,14 @@ def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
     }
 
     # Combine Richard & Julian into Lev.
-    if VotingEstimator is not None:
-        vote_kwargs = {
-            "estimators": [("phenotype", d["Richard"]), ("mutation", d["Julian"])]
-        }
-        if type(VotingEstimator) == VotingClassifier:
-            vote_kwargs["voting"] = "soft"
-        p_Lev = VotingEstimator(**vote_kwargs)
-        d["Lev"] = p_Lev
+    # if VotingEstimator is not None:
+    #     vote_kwargs = {
+    #         "estimators": [("phenotype", d["Richard"]), ("mutation", d["Julian"])]
+    #     }
+    #     if type(VotingEstimator) == VotingClassifier:
+    #         vote_kwargs["voting"] = "soft"
+    #     p_Lev = VotingEstimator(**vote_kwargs)
+    #     d["Lev"] = p_Lev
 
     return d
 
@@ -399,10 +399,11 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
         KNeighborsClassifier: {"n_neighbors": 2, "weights": "distance"},
         LogisticRegression: {
             "random_state": random_state,
-            "penalty": "elasticnet",
+            # "penalty": "elasticnet",
+            "penalty": "l2",
             "class_weight": "balanced",
             "solver": "saga",
-            "l1_ratio": 0.5,
+            # "l1_ratio": 0.5,
             "C": 1.0,
             "max_iter": 5000,
         },
