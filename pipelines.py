@@ -472,11 +472,14 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
         KNeighborsClassifier: {"n_neighbors": 2, "weights": "distance"},
         LogisticRegression: {
             "random_state": random_state,
-            # "penalty": "elasticnet",
+            # Choose l2 norm in combination with newton conjugate gradient solver for
+            # converging results (elasticnet is slightly better, but not always
+            # converges correctly).
+            "solver": "newton-cg",
             "penalty": "l2",
             "class_weight": "balanced",
-            "solver": "saga",
-            # "l1_ratio": 0.5,
+            # Make an unbiased model.
+            # "fit_intercept": False,
             "C": 1.0,
             "max_iter": 5000,
         },
