@@ -37,8 +37,8 @@ class AggregateColumns(BaseEstimator, TransformerMixin):
         if not isinstance(X, pd.DataFrame):
             raise NotImplementedError("Does not yet support non-pandas inputs.")
 
-        if not set(self.columns_).issubset(set(X.columns)):
-            raise KeyError("Not all columns found in `X`.")
+        if set(self.columns_).isdisjoint(set(X.columns)):
+            raise KeyError("No overlap in columns with `X`.")
 
         return self
 
@@ -47,12 +47,16 @@ class AggregateColumns(BaseEstimator, TransformerMixin):
         Apply the transformation column-wise.
         """
         # Columns that should be left untouched in the transformation.
-        passthrough_columns = set(X.columns) - set(self.columns_)
+        passthrough_columns = list(set(X.columns) - set(self.columns_))
+        passthrough_columns.sort()
 
         X_transformed = X[passthrough_columns].copy()
         X_transformed[self.aggregate_column_name_] = X[self.columns_].apply(
             self.aggregate_function_, axis=1
         )
+
+        # Keep track of returned columns of the last transformation.
+        self.returned_columns_ = passthrough_columns + [self.aggregate_column_name_]
         return X_transformed
 
 
@@ -338,6 +342,12 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         """
         if not isinstance(X, pd.DataFrame):
             raise TypeError("X must be Pandas data frame.")
+
+        # Check that all columns are actually in the data frame.
+        if not set(self.categorical_columns_).issubset(set(X.columns)):
+            raise KeyError(
+                "Some columns in in {} are not in X.".format(self.categorical_columns_)
+            )
 
         # Keep track of categories, per column, that are to be merged.
         self.categories_to_merge_ = {}

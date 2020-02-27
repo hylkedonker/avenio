@@ -33,56 +33,85 @@ import numpy as np
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import phenotype_features
-from models import Gene2Vec, MergeRareCategories, SparseFeatureFilter
+from models import AggregateColumns, Gene2Vec, MergeRareCategories, SparseFeatureFilter
 
 
 RANDOM_STATE = 1234
 
 mutation_columns = [
-    "TP53",
     "KRAS",
-    "FGFR1",
-    "PTEN",
-    "FBXW7",
-    "KDR",
-    "MTOR",
-    "EGFR",
-    "MET",
-    "CDKN2A",
+    "PIK3R1",
+    "PMS2",
+    "SMAD4",
     "BRAF",
-    "APC",
+    "CCND1",
+    "FLT4",
+    "KDR",
+    "TERT",
+    "TP53",
+    "BRCA1",
+    "CDK4",
+    "EGFR",
     "KEAP1",
-    "ALK",
-    "AR",
+    "MET",
+    "PDGFRA",
+    "RET",
+    "TSC2",
     "ERBB2",
+    "FGFR1",
+    "PIK3CA",
+    "PTEN",
+    "RB1",
+    "CDKN2A",
+    "FLT1",
+    "AR",
+    "ESR1",
+    "MTOR",
+    "STK11",
+    "FBXW7",
+    "FLT3",
+    "ABL1",
+    "RNF43",
+    "ROS1",
+    "ALK",
+    "APC",
+    "MSH2",
+    "BRCA2",
+    "MAP2K1",
+    "SMO",
+    "FGFR3",
+    "TSC1",
+    "CCND2",
+    "PTCH1",
+    "FGFR2",
+    "MLH1",
+    "KIT",
+    "VHL",
+    "MSH6",
+    "RAF1",
+    "NTRK1",
+    "CTNNB1",
+    "PDCD1LG2",
+    "CDK6",
+    "NF2",
+    "JAK3",
     "NRAS",
     "NFE2L2",
-    "TSC2",
-    "GNAS",
-    "STK11",
+    "AKT1",
     "CD274",
-    "CTNNB1",
     "MAP2K2",
     "IDH1",
-    "NF2",
-    "MAP2K1",
-    "PIK3CA",
-    "IDH2",
-    "FLT4",
-    "ESR1",
-    "DDR2",
-    "KIT",
-    "PTCH1",
-    "SMAD4",
-    "SMO",
-    "RNF43",
-    "FGFR2",
     "JAK2",
-    "CCND1",
+    "PDGFRB",
+    "IDH2",
+    "GNAS",
+    "CSF1R",
+    "ARAF",
+    "DDR2",
     "GATA3",
-    "PDGFRA",
+    "GNA11",
+    "GNAQ",
 ]
-
 phenotypes_to_drop = [
     # "Systemischetherapie",
     # # "histology_grouped",
@@ -185,6 +214,50 @@ def pipeline_Julian(Estimator, **kwargs):
         ]
     )
     return p_Julian
+
+
+def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
+    """
+    Freeman pipeline which combines all the point mutations.
+    """
+    all_categorical_columns_transformer = ColumnTransformer(
+        [
+            (
+                "LabelEncoder",
+                OneHotEncoder(handle_unknown="ignore"),
+                categorical_input_columns,
+            ),
+            (
+                "age_discretizer",
+                KBinsDiscretizer(n_bins=3, encode="onehot"),
+                ["leeftijd"],
+            ),
+        ],
+        remainder="passthrough",
+    )
+
+    # Pipeline with all features, Freeman.
+    p_Freeman_mutation_burd = Pipeline(
+        steps=[
+            (
+                "aggregate_point_mutations",
+                AggregateColumns(
+                    columns=[c + "_snv" for c in mutation_columns],
+                    aggregate_function=np.sum,
+                    aggregate_column_name="snv_mutant_burden",
+                ),
+            ),
+            (
+                "category_grouper",
+                MergeRareCategories(
+                    categorical_columns=categorical_input_columns, thresshold=30
+                ),
+            ),
+            ("transform_columns", all_categorical_columns_transformer),
+            ("estimator", Estimator(**kwargs)),
+        ]
+    )
+    return p_Freeman_mutation_burd
 
 
 def pipeline_Freeman(Estimator, **kwargs):
@@ -468,10 +541,20 @@ def calculate_pass_through_column_names_Freeman(pipeline):
     """
     Determine the column names that pass unaltered through the Freeman pipeline.
     """
-    feature_filter = pipeline.steps[0][1]
+    # In case of Freeman pipeline.
+    if "filter_rare_mutations" in pipeline.named_steps:
+        first_step_columns = pipeline.named_steps[
+            "filter_rare_mutations"
+        ].columns_to_keep_
+    # For the Freeman_mutational_burden pipeline.
+    elif "aggregate_point_mutations" in pipeline.named_steps:
+        first_step_columns = pipeline.named_steps[
+            "aggregate_point_mutations"
+        ].returned_columns_
+
     columns = [
         column
-        for column in feature_filter.columns_to_keep_
+        for column in first_step_columns
         if column not in categorical_input_columns
         if column not in phenotypes_to_drop
     ]
