@@ -3,7 +3,7 @@ from typing import Callable
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, NMF
 from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.ensemble import (
     GradientBoostingClassifier,
@@ -113,7 +113,7 @@ mutation_columns = [
     "GNAQ",
 ]
 phenotypes_to_drop = [
-    # "Systemischetherapie",
+    "Systemischetherapie",
     # # "histology_grouped",
     # # "lymfmeta",
     # "brainmeta",
@@ -185,7 +185,9 @@ def pipeline_Richard(Estimator, **kwargs):
             (
                 "category_grouper",
                 MergeRareCategories(
-                    categorical_columns=categorical_input_columns, thresshold=30
+                    categorical_columns=categorical_input_columns,
+                    thresshold=30,
+                    verify_categorical_columns=False,
                 ),
             ),
             (
@@ -220,13 +222,14 @@ def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
     """
     Freeman pipeline which combines all the point mutations.
     """
+    columns_to_encode = [
+        column
+        for column in categorical_input_columns
+        if column not in phenotypes_to_drop
+    ]
     all_categorical_columns_transformer = ColumnTransformer(
         [
-            (
-                "LabelEncoder",
-                OneHotEncoder(handle_unknown="ignore"),
-                categorical_input_columns,
-            ),
+            ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
             (
                 "age_discretizer",
                 KBinsDiscretizer(n_bins=3, encode="onehot"),
@@ -250,7 +253,9 @@ def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
             (
                 "category_grouper",
                 MergeRareCategories(
-                    categorical_columns=categorical_input_columns, thresshold=30
+                    categorical_columns=columns_to_encode,
+                    thresshold=30,
+                    verify_categorical_columns=True,
                 ),
             ),
             ("transform_columns", all_categorical_columns_transformer),
@@ -264,13 +269,15 @@ def pipeline_Freeman(Estimator, **kwargs):
     """
     All-feature pipeline Freeman.
     """
+    columns_to_encode = [
+        column
+        for column in categorical_input_columns
+        if column not in phenotypes_to_drop
+    ]
+
     all_categorical_columns_transformer = ColumnTransformer(
         [
-            (
-                "LabelEncoder",
-                OneHotEncoder(handle_unknown="ignore"),
-                categorical_input_columns,
-            ),
+            ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
             (
                 "age_discretizer",
                 KBinsDiscretizer(n_bins=3, encode="onehot"),
@@ -284,6 +291,10 @@ def pipeline_Freeman(Estimator, **kwargs):
     p_Freeman = Pipeline(
         steps=[
             (
+                "remove_specific_phenotypes",
+                FunctionTransformer(drop_specific_phenotypes, validate=False),
+            ),
+            (
                 "filter_rare_mutations",
                 SparseFeatureFilter(
                     top_k_features=6, columns_to_consider=mutation_columns
@@ -292,7 +303,9 @@ def pipeline_Freeman(Estimator, **kwargs):
             (
                 "category_grouper",
                 MergeRareCategories(
-                    categorical_columns=categorical_input_columns, thresshold=30
+                    categorical_columns=columns_to_encode,
+                    thresshold=30,
+                    verify_categorical_columns=True,
                 ),
             ),
             ("transform_columns", all_categorical_columns_transformer),
@@ -300,55 +313,6 @@ def pipeline_Freeman(Estimator, **kwargs):
         ]
     )
     return p_Freeman
-
-
-def pipeline_Nikolay(Estimator, **kwargs):
-    """
-    Pipeline with gene embeddings.
-    """
-    p_Bogolyubov = Pipeline(
-        steps=[
-            ("vectorise_mutations", Gene2Vec(remainder="drop")),
-            (
-                "category_grouper",
-                MergeRareCategories(
-                    categorical_columns=categorical_input_columns, thresshold=30
-                ),
-            ),
-            ("estimator", Estimator(**kwargs)),
-        ]
-    )
-    return p_Bogolyubov
-
-
-def pipeline_Pyotr(Estimator, **kwargs):
-    """
-    Pipeline with both embeddings and categorical data.
-    """
-    all_categorical_columns_transformer = ColumnTransformer(
-        [
-            (
-                "LabelEncoder",
-                OneHotEncoder(handle_unknown="ignore"),
-                categorical_input_columns,
-            )
-        ],
-        remainder="passthrough",
-    )
-    p_Kapitsa = Pipeline(
-        steps=[
-            ("vectorise_mutations", Gene2Vec(remainder="ignore")),
-            (
-                "category_grouper",
-                MergeRareCategories(
-                    categorical_columns=categorical_input_columns, thresshold=30
-                ),
-            ),
-            ("transform_categories", all_categorical_columns_transformer),
-            ("estimator", Estimator(**kwargs)),
-        ]
-    )
-    return p_Kapitsa
 
 
 def hybrid_regressor(random_state: int = 1234) -> BaseEstimator:
@@ -479,7 +443,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "penalty": "l2",
             "class_weight": "balanced",
             # Make an unbiased model.
-            # "fit_intercept": False,
+            "fit_intercept": False,
             "C": 1.0,
             "max_iter": 5000,
         },

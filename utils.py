@@ -65,7 +65,6 @@ def bootstrap(k):
                 bootstrapped_results.append(values)
 
             bootstrapped_results = np.array(bootstrapped_results)
-
             return (
                 np.mean(bootstrapped_results, axis=0),
                 np.std(bootstrapped_results, axis=0),

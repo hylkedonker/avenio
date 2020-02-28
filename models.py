@@ -312,6 +312,7 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         categorical_columns: Optional[list] = None,
         thresshold: int = 30,
         unique_column: str = "raise",
+        verify_categorical_columns: bool = True,
     ):
         """
         Merge columns in `categorical_columns` occuring less than `thresshold`.
@@ -324,6 +325,7 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         """
         self.thresshold_ = thresshold
         self.unique_column_ = unique_column
+        self.verify_categorical_columns_ = verify_categorical_columns
 
         if not self.thresshold_:
             raise ValueError("No thresshold!")
@@ -345,9 +347,23 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
 
         # Check that all columns are actually in the data frame.
         if not set(self.categorical_columns_).issubset(set(X.columns)):
-            raise KeyError(
-                "Some columns in in {} are not in X.".format(self.categorical_columns_)
+            if self.verify_categorical_columns_:
+                raise KeyError(
+                    "Some columns in in {} are not in X.".format(
+                        self.categorical_columns_
+                    )
+                )
+            # Check if there is at least some overlap.
+            elif set(self.categorical_columns_).isdisjoint(set(X.columns)):
+                raise KeyError(
+                    "None of the supplied categorical columns are present in `X`."
+                )
+
+            # Perform transformation only for the overlap in columns.
+            self.categorical_columns_ = list(
+                set(self.categorical_columns_).intersection(set(X.columns))
             )
+            self.categorical_columns_.sort()
 
         # Keep track of categories, per column, that are to be merged.
         self.categories_to_merge_ = {}
