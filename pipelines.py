@@ -204,7 +204,7 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
 
     # Partition age in two.
     young = X_prime["leeftijd"] < 65
-    X_prime["age"] = ">= 65"
+    X_prime["age"] = "$\geq$ 65"
     X_prime.loc[young, "age"] = "<65"
     # Remove original column.
     X_prime.drop(columns="leeftijd", inplace=True)
@@ -333,10 +333,9 @@ def pipeline_Freeman(Estimator, **kwargs):
     columns_to_encode = [
         column
         for column in categorical_input_columns
-        if column not in phenotypes_to_drop and column not in meta_columns
+        if column not in phenotypes_to_drop
     ]
-    # Encode this TNM column instead of all the metastasis columns.
-    columns_to_encode.extend(["TNM-N", "age"])
+    columns_to_encode.append("age")
 
     all_categorical_columns_transformer = ColumnTransformer(
         [
@@ -357,10 +356,10 @@ def pipeline_Freeman(Estimator, **kwargs):
                 "clinical_curation",
                 FunctionTransformer(clinical_data_curation, validate=False),
             ),
-            (
-                "TNM_metastases",
-                FunctionTransformer(metastases_columns_to_TNM, validate=False),
-            ),
+            # (
+            #     "TNM_metastases",
+            #     FunctionTransformer(metastases_columns_to_TNM, validate=False),
+            # ),
             (
                 "remove_specific_phenotypes",
                 FunctionTransformer(drop_specific_phenotypes, validate=False),
