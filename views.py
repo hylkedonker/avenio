@@ -240,16 +240,33 @@ def remove_coefficients_below_thresshold(coeff_mean, coeff_std, names, thresshol
 
 
 @bootstrap(k=5)
-def fit_model_coefficients(X_train, y_train, X_test, y_test, pipeline):
+def fit_estimator_coefficients(X_train, y_train, X_test, y_test, pipeline):
     """
-    Fit coefficients only, ignore test data.
+    Fit estimator coefficients only (locked preprocessing pipeline), ignore test data.
 
     Signature:
     fit_model_coefficients(X, y)
     """
-    pipeline.fit(X_train, y_train)
+    # Transform the data using the locked preprocessing pipeline.
+    preprocess_pipeline = Pipeline(pipeline.steps[:-1])
+    X_train_transf = preprocess_pipeline.transform(X_train)
+
+    # Fit the coefficients of the estimator only, don't refit the remaining pipeline.
     estimator = pipeline.named_steps["estimator"]
+    estimator.fit(X_train_transf, y_train)
     return estimator.coef_.flatten()
+
+
+def fit_model_coefficients(X, y, pipeline):
+    """
+    Fit the coefficients of the model (ignore the test data).
+    """
+    # First fit the preprocessing pipeline to all the data. This ensures that all the
+    # one-hot-encoding categories have been picked up.
+    pipeline.fit(X, y)
+    # Lock the pipeline up to the estimator. That is, fit only the estimator (using
+    # bootstrapping) -- don't refit the remaining pipeline.
+    return fit_estimator_coefficients(X, y, pipeline)
 
 
 def view_linear_model_richard(X, y, pipeline):
@@ -344,9 +361,9 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     # Make a plot for the clinical data.
     with sns.plotting_context(font_scale=1.5):
         # Remove uninformative conjugate variables, due to one-hot-encoding.
-        coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_parallel_coefficients(
-            coeff_mean_clinical, coeff_std_clinical, clinical_variable_names
-        )
+        # coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_parallel_coefficients(
+        #     coeff_mean_clinical, coeff_std_clinical, clinical_variable_names
+        # )
         coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_coefficients_below_thresshold(
             coeff_mean_clinical,
             coeff_std_clinical,

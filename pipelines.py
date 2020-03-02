@@ -119,10 +119,18 @@ phenotypes_to_drop = [
     # "brainmeta",
     # "adrenalmeta",
     # # "livermeta",
-    # "stage",
+    "stage",
     # "therapyline",
     # "lungmeta",
     # "skeletonmeta",
+]
+meta_columns = [
+    "lymfmeta",
+    "brainmeta",
+    "adrenalmeta",
+    "livermeta",
+    "lungmeta",
+    "skeletonmeta",
 ]
 
 
@@ -149,6 +157,59 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
 def drop_specific_phenotypes(X: pd.DataFrame) -> pd.DataFrame:
     X_prime = X.drop(columns=phenotypes_to_drop)
     return X_prime.copy()
+
+
+def metastases_columns_to_TNM(X: pd.DataFrame) -> pd.DataFrame:
+    """
+    Group the metastases columns according to TNM staging system.
+    """
+    X_prime = X.copy()
+
+    # Indicate presence of lymphnode metastasis (the primary metastasis is always
+    # present for this data set).
+    d = {"no metastasis present": "absent", "metastasis present": "present"}
+    X_prime["TNM-N"] = X_prime["lymfmeta"].replace(d)
+
+    # Count the number of distant metasteses regions.
+    X_prime["TNM-M_count"] = (
+        X_prime[["brainmeta", "adrenalmeta", "livermeta", "skeletonmeta"]]
+        .replace({"no metastasis present": 0, "metastasis present": 1})
+        .sum(axis=1)
+    )
+
+    return X_prime.drop(columns=meta_columns)
+
+
+def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
+    """
+    Further curation of the clinical data.
+    """
+    X_prime = X.copy()
+
+    # After inspection the other histologies are partially adeno.
+    X_prime["histology_grouped"].replace({"other": "adeno"}, inplace=True)
+    first_line_therapy = X_prime["therapyline"].isin([0, 1])
+
+    # According to the selection criterea of the study, 0th and 1st line should be
+    # combined.
+    X_prime.loc[first_line_therapy, "therapyline"] = "0+1"
+    X_prime.loc[~first_line_therapy, "therapyline"] = ">1"
+
+    # Unknown smoking status are probably smokers according Harry.
+    X_prime["smokingstatus"].replace({"unknown": "smoker"}, inplace=True)
+    # Group together current and previous smokers.
+    X_prime["smokingstatus"].replace(
+        {"previous": "current+previous", "smoker": "current+previous"}, inplace=True
+    )
+
+    # Partition age in two.
+    young = X_prime["leeftijd"] < 65
+    X_prime["age"] = ">= 65"
+    X_prime.loc[young, "age"] = "<65"
+    # Remove original column.
+    X_prime.drop(columns="leeftijd", inplace=True)
+
+    return X_prime
 
 
 def pipeline_Richard(Estimator, **kwargs):
@@ -272,17 +333,19 @@ def pipeline_Freeman(Estimator, **kwargs):
     columns_to_encode = [
         column
         for column in categorical_input_columns
-        if column not in phenotypes_to_drop
+        if column not in phenotypes_to_drop and column not in meta_columns
     ]
+    # Encode this TNM column instead of all the metastasis columns.
+    columns_to_encode.extend(["TNM-N", "age"])
 
     all_categorical_columns_transformer = ColumnTransformer(
         [
             ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
-            (
-                "age_discretizer",
-                KBinsDiscretizer(n_bins=3, encode="onehot"),
-                ["leeftijd"],
-            ),
+            # (
+            #     "age_discretizer",
+            #     KBinsDiscretizer(n_bins=3, encode="onehot"),
+            #     ["leeftijd"],
+            # ),
         ],
         remainder="passthrough",
     )
@@ -290,6 +353,14 @@ def pipeline_Freeman(Estimator, **kwargs):
     # Pipeline with all features, Freeman.
     p_Freeman = Pipeline(
         steps=[
+            (
+                "clinical_curation",
+                FunctionTransformer(clinical_data_curation, validate=False),
+            ),
+            (
+                "TNM_metastases",
+                FunctionTransformer(metastases_columns_to_TNM, validate=False),
+            ),
             (
                 "remove_specific_phenotypes",
                 FunctionTransformer(drop_specific_phenotypes, validate=False),
@@ -303,7 +374,7 @@ def pipeline_Freeman(Estimator, **kwargs):
             (
                 "category_grouper",
                 MergeRareCategories(
-                    categorical_columns=columns_to_encode,
+                    categorical_columns=None,
                     thresshold=30,
                     verify_categorical_columns=True,
                 ),
@@ -534,12 +605,10 @@ def calculate_pass_through_column_names_Freeman(pipeline):
 
 def reconstruct_categorical_variable_names(pipeline):
     """
-    Determine the column names of the input columns entering Richard's classifier.
+    Determine the column names of the categorical (clinical) input columns.
     """
     # Take the transformer right before the classifier.
     column_transformer = pipeline.steps[-2][1]
-    # Consistency check: The column transformer should only contain the one hot encoder.
-    assert len(column_transformer.transformers_) == 3
 
     # Get the column names that are transformed.
     # 1) One-hot-encoder.
@@ -563,6 +632,18 @@ def reconstruct_categorical_variable_names(pipeline):
         names.extend(age_labels)
 
     # Make the names prettier.
+    new_names = {
+        "histology_grouped": "histology",
+        "smokingstatus": "smoker",
+        "therapyline": "therapy line",
+    }
+    # Make replacement for the keys above.
+    for i, name in enumerate(names):
+        for key, value in new_names.items():
+            if key in name:
+                names[i] = name.replace(key, value)
+                continue
+
     names = [name.replace("_", ": ") for name in names]
     return names
 
