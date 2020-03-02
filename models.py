@@ -345,8 +345,11 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         if not isinstance(X, pd.DataFrame):
             raise TypeError("X must be Pandas data frame.")
 
+        # Auto determine the categorical columns (=non-numeric columns) when None.
+        if self.categorical_columns_ is None:
+            self.categorical_columns_ = get_categorical_columns(X)
         # Check that all columns are actually in the data frame.
-        if not set(self.categorical_columns_).issubset(set(X.columns)):
+        elif not set(self.categorical_columns_).issubset(set(X.columns)):
             if self.verify_categorical_columns_:
                 raise KeyError(
                     "Some columns in in {} are not in X.".format(
@@ -367,10 +370,6 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
 
         # Keep track of categories, per column, that are to be merged.
         self.categories_to_merge_ = {}
-
-        # Use non-numeric columns when None were provided.
-        if not self.categorical_columns_:
-            self.categorical_columns_ = get_categorical_columns(X)
 
         # Go through all the categorical columns.
         for column in self.categorical_columns_:

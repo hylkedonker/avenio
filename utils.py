@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 
 
 def get_categorical_columns(data_frame: pd.DataFrame) -> list:
@@ -43,7 +43,11 @@ def bootstrap(k):
 
             # k-fold cross validation of training size dependence.
             # Keep track of scores for this particular fold.
-            for train, test in KFold(n_splits=k).split(X):
+            if y.dtype == np.object_:
+                splits = StratifiedKFold(n_splits=k).split(X, y)
+            else:
+                splits = KFold(n_splits=k).split(X)
+            for train, test in splits:
                 if isinstance(X, pd.DataFrame):
                     X_train, X_test, y_train, y_test = (
                         X.iloc[train],
