@@ -202,6 +202,9 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
         {"previous": "current+previous", "smoker": "current+previous"}, inplace=True
     )
 
+    d = {"no metastasis present": "absent", "metastasis present": "present"}
+    X_prime[meta_columns] = X_prime[meta_columns].replace(d)
+
     # Partition age in two.
     young = X_prime["leeftijd"] < 65
     X_prime["age"] = "$\geq$ 65"

@@ -362,6 +362,41 @@ def view_decision_tree_julian(pipeline, save_to: Optional[str] = None):
     return g
 
 
+def merge_partitioned_coefficients(partition_a: tuple, partition_b: tuple):
+    """
+    Merge complementary variables into single representation.
+    """
+
+    def _unpack_feature_category_names(coefficient_names):
+        """  """
+        feature_category_pairs = (
+            coef_name.split(":") for coef_name in coefficient_names
+        )
+        return zip(*feature_category_pairs)
+
+    # Unpack feature-category pairs.
+    feature_names_a, category_names_a = _unpack_feature_category_names(partition_a[2])
+    feature_names_b, category_names_b = _unpack_feature_category_names(partition_b[2])
+
+    # The features must be paired.
+    if feature_names_a != feature_names_b:
+        raise ValueError(
+            "Left hand feature partition is not aligned with right hand partition."
+        )
+
+    # Create new variable name.
+    new_names = map(
+        lambda x: f"{x[0]}: {x[1].strip()} vs. {x[2].strip()}",
+        zip(feature_names_a, category_names_a, category_names_b),
+    )
+    new_mean = map(lambda x: x[0] - x[1], zip(partition_a[0], partition_b[0]))
+    new_std = np.array(partition_a[1]) * 2
+
+    new_mean = np.fromiter(new_mean, dtype=float)
+
+    return (new_mean, new_std, np.array(tuple(new_names)))
+
+
 def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     """
     Infer the variable names and plot the coefficients.
@@ -400,42 +435,50 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 
     # Make a plot for the clinical data.
     with sns.plotting_context(font_scale=1.5):
-        # Remove uninformative conjugate variables, due to one-hot-encoding.
-        # coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_parallel_coefficients(
-        #     coeff_mean_clinical, coeff_std_clinical, clinical_variable_names
-        # )
         coef_partitions = dichomotise_parallel_coefficients(
             coeff_mean_clinical, coeff_std_clinical, clinical_variable_names
         )
 
-        for (
-            i,
-            (coeff_mean_clinical, coeff_std_clinical, clinical_variable_names),
-        ) in enumerate(coef_partitions):
-            # coeff_mean_clinical, coeff_std_clinical, clinical_variable_names = remove_coefficients_below_thresshold(
-            #     coeff_mean_clinical,
-            #     coeff_std_clinical,
-            #     clinical_variable_names,
-            #     thresshold=thresshold,
-            # )
-
+        def _init_plot():
+            """ Initialise clinical plot settings. """
             plt.figure(figsize=(8, 6))
             plt.title("Clinical variables")
             plt.xlabel(r"Slope $c_i$ ($\|c_i\| > {:.2f}$)".format(thresshold))
-            sns.barplot(
-                x=coeff_mean_clinical,
-                xerr=coeff_std_clinical,
-                y=clinical_variable_names,
-                label="large",
+
+        try:
+            merged_mean, merged_std, merged_name = merge_partitioned_coefficients(
+                coef_partitions[1], coef_partitions[0]
             )
+        except ValueError:
+            # When unable to merge, generate two indepdendent plots.
+            for (
+                i,
+                (coeff_mean_clinical, coeff_std_clinical, clinical_variable_names),
+            ) in enumerate(coef_partitions):
+                _init_plot()
+                sns.barplot(
+                    x=coeff_mean_clinical,
+                    xerr=coeff_std_clinical,
+                    y=clinical_variable_names,
+                    label="large",
+                )
+                plt.tight_layout()
+                if filenames:
+                    plt.savefig(
+                        "figs/{}_{}.png".format(filenames[0], i + 1),
+                        bbox_inches="tight",
+                    )
+                    plt.savefig(
+                        "figs/{}_{}.eps".format(filenames[0], i + 1),
+                        bbox_inches="tight",
+                    )
+        else:
+            _init_plot()
+            sns.barplot(x=merged_mean, xerr=merged_std, y=merged_name, label="large")
             plt.tight_layout()
             if filenames:
-                plt.savefig(
-                    "figs/{}_{}.png".format(filenames[0], i + 1), bbox_inches="tight"
-                )
-                plt.savefig(
-                    "figs/{}_{}.eps".format(filenames[0], i + 1), bbox_inches="tight"
-                )
+                plt.savefig("figs/{}.png".format(filenames[0]), bbox_inches="tight")
+                plt.savefig("figs/{}.eps".format(filenames[0]), bbox_inches="tight")
 
     # And a seperate figure for the genetic data.
     with sns.plotting_context(font_scale=1.5):
@@ -470,5 +513,6 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 #     "output/train__harmonic_mean__CNV Score.tsv",
 # )
 # y_train_resp = y_train_hm["response_grouped"]
-# logistic_Freeman = pipeline_Freeman(LogisticRegression)
+# parameters = {"solver": "newton-cg"}
+# logistic_Freeman = pipeline_Freeman(LogisticRegression, **parameters)
 # view_linear_model_freeman(X_train_hm, y_train_resp, logistic_Freeman, thresshold=0.05)
