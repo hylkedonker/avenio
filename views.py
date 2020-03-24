@@ -443,7 +443,7 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
             """ Initialise clinical plot settings. """
             plt.figure(figsize=(8, 6))
             plt.title("Clinical variables")
-            plt.xlabel(r"Slope $c_i$ ($\|c_i\| > {:.2f}$)".format(thresshold))
+            plt.xlabel(r"Slope difference $\Delta c_i$")
 
         try:
             merged_mean, merged_std, merged_name = merge_partitioned_coefficients(
