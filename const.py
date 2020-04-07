@@ -186,7 +186,7 @@ target_genes = [
 # Phenotype features that serve as input for the model.
 phenotype_features = [
     "gender",
-    "leeftijd",
+    "Age",
     "stage",
     "therapyline",
     "smokingstatus",

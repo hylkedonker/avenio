@@ -14,11 +14,10 @@ np.random.seed(RANDOM_STATE)
 phenotype_labels = [
     "Clinical_Response",
     "response_grouped",
-    "progressie",
-    "PFS_days",
-    "OS_days",
     "OS_months",
     "PFS_months",
+    "Censor_OS",
+    "Censor_progression",
 ]
 
 
