@@ -240,8 +240,8 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
 
 
 def load_process_and_store_spreadsheets(
-    spread_sheet_filename: str = "2019-02-12_FINAL_RESULTS_SomaticAll.xlsx",
-    spss_filename: str = "phenotypes_20191018.sav",
+    spread_sheet_filename: str = "variant_list_20200406.xlsx",
+    spss_filename: str = "phenotypes_20200406.sav",
     transformation: Callable = lambda x, y: y - x,
     columns: List[str] = [
         "Allele Fraction",

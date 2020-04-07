@@ -57,14 +57,14 @@ def single_out_no_mutation_patients(spread_sheet_filename: str) -> pd.Series:
 
 
 def load_avenio_files(
-    spread_sheet_filename: str = "2019-02-12_FINAL_RESULTS_SomaticAll.xlsx",
-    spss_filename: str = "phenotypes_20191018.sav",
+    spread_sheet_filename: str = "variant_list_20200406.xlsx",
+    spss_filename: str = "phenotypes_20200406.sav",
 ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """
     Load the mutation spreadsheet and SPSS phenotype data in two data frames.
     """
     # Load data from spreadsheet.
-    mutation_data_frame = pd.read_excel(spread_sheet_filename, sheet_name=3)
+    mutation_data_frame = pd.read_excel(spread_sheet_filename, sheet_name=1)
     # Load the phenotypes from SPSS file.
     phenotypes = pd.read_spss(spss_filename)
 
