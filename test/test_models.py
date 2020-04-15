@@ -288,13 +288,11 @@ class TestAutoMaxScaler(unittest.TestCase):
                 "d": np.array([-2.0, 1.5, 0.0, 0.0, 0.0, 0.5, 1.5]),
             }
         )
-        scaler = AutoMaxScaler(uniqueness_thresshold_category=0.7).fit(X)
+        scaler = AutoMaxScaler(uniqueness_thresshold=0.7).fit(X)
         self.assertEqual(scaler.columns_to_transform_, ["a", "c", "d"])
 
         # Test ignoring columns.
-        scaler = AutoMaxScaler(
-            uniqueness_thresshold_category=0.7, ignore_columns=("a",)
-        ).fit(X)
+        scaler = AutoMaxScaler(uniqueness_thresshold=0.7, ignore_columns=["a"]).fit(X)
         self.assertEqual(scaler.columns_to_transform_, ["c", "d"])
 
     def test_scaling(self):

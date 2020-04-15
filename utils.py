@@ -32,7 +32,7 @@ def get_categorical_columns(
         # categorical.
         if uniqueness_thresshold is not None:
             # Correct for sparseness, by ignoring zero values.
-            if 0 in values.unique():
+            if 0 in values.unique() and values.nunique() > 1:
                 non_sparse_counts = len(values) - values.value_counts()[0]
                 if (values.nunique() - 1) / non_sparse_counts <= uniqueness_thresshold:
                     categorical_columns.append(column)

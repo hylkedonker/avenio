@@ -430,27 +430,25 @@ class AutoMaxScaler(BaseEstimator, TransformerMixin):
     """
 
     def __init__(
-        self,
-        ignore_columns: tuple = tuple(),
-        uniqueness_thresshold_category: Optional[float] = 0.8,
+        self, ignore_columns: list = [], uniqueness_thresshold: Optional[float] = 0.8
     ):
         """
         Args:
-            uniqueness_thresshold_category: Columns with less unique values than this
+            uniqueness_thresshold: Columns with less unique values than this
                 are considered categorical.
         """
-        self.ignore_columns_ = list(ignore_columns)
-        self.scaler_ = MaxAbsScaler(copy=True)
-        self.thresshold_ = uniqueness_thresshold_category
+        self.ignore_columns = ignore_columns
+        self.uniqueness_thresshold = uniqueness_thresshold
 
     def fit(self, X, y=None):
         """
         Determine which columns to min-max scale.
         """
-        categorical_columns = get_categorical_columns(X, self.thresshold_)
+        self.scaler_ = MaxAbsScaler(copy=True)
+        categorical_columns = get_categorical_columns(X, self.uniqueness_thresshold)
 
         def is_numeric_and_not_ignored(column):
-            if column not in categorical_columns and column not in self.ignore_columns_:
+            if column not in categorical_columns and column not in self.ignore_columns:
                 return True
             return False
 

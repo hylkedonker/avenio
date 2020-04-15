@@ -33,7 +33,12 @@ import numpy as np
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import phenotype_features
-from models import AggregateColumns, MergeRareCategories, SparseFeatureFilter
+from models import (
+    AggregateColumns,
+    AutoMaxScaler,
+    MergeRareCategories,
+    SparseFeatureFilter,
+)
 
 
 RANDOM_STATE = 1234
@@ -366,6 +371,7 @@ def pipeline_Freeman(Estimator, **kwargs):
                     verify_categorical_columns=True,
                 ),
             ),
+            ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
             ("transform_columns", all_categorical_columns_transformer),
             ("estimator", Estimator(**kwargs)),
         ]
@@ -573,10 +579,8 @@ def calculate_pass_through_column_names_Freeman(pipeline):
         if column not in categorical_input_columns
         if column not in phenotypes_to_drop
     ]
-    # Remove age column, if necessary.
-    column_transformer = pipeline.steps[-2][1]
-    if "age_discretizer" in column_transformer.named_transformers_:
-        columns.remove("Age")
+    # Remove age column, because `clinical_data_curation` made it categorical.
+    columns.remove("age")
     return columns
 
 

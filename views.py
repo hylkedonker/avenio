@@ -4,6 +4,7 @@ from typing import Iterable, Optional
 import graphviz
 import matplotlib
 from matplotlib import pyplot as plt
+import pandas as pd
 import numpy as np
 import scipy as sp
 import seaborn as sns
@@ -225,18 +226,25 @@ def dichomotise_parallel_coefficients(coeff_mean, coeff_std, names):
     return (coef_mean_a, coef_std_a, name_a), (coef_mean_b, coef_std_b, name_b)
 
 
-def remove_coefficients_below_thresshold(coeff_mean, coeff_std, names, thresshold=0.05):
+def remove_coefficients_below_thresshold(data_frame, thresshold=0.05):
     """
     Remove coefficients for which the magnitude |c_i| < thresshold.
     """
-    name_new, coef_mean_new, coef_std_new = [], [], []
-    for i, y_i in enumerate(coeff_mean):
-        if abs(y_i) > thresshold:
-            name_new.append(names[i])
-            coef_mean_new.append(y_i)
-            coef_std_new.append(coeff_std[i])
+    return data_frame.loc[abs(data_frame["mean"]) > thresshold]
 
-    return coef_mean_new, coef_std_new, name_new
+
+# def remove_coefficients_below_thresshold(coeff_mean, coeff_std, names, thresshold=0.05):
+#     """
+#     Remove coefficients for which the magnitude |c_i| < thresshold.
+#     """
+#     name_new, coef_mean_new, coef_std_new = [], [], []
+#     for i, y_i in enumerate(coeff_mean):
+#         if abs(y_i) > thresshold:
+#             name_new.append(names[i])
+#             coef_mean_new.append(y_i)
+#             coef_std_new.append(coeff_std[i])
+
+#     return coef_mean_new, coef_std_new, name_new
 
 
 @bootstrap(k=5)
@@ -381,7 +389,7 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     bootstrapped_coefficients = fit_model_coefficients(X, y, pipeline)
     coeff_mean, coeff_std = bootstrapped_coefficients
 
-    # Generate variable names of the one hot encoded categorical data.
+    # Generate variable names from the one-hot-encoded categorical data.
     clinical_variable_names = reconstruct_categorical_variable_names(pipeline)
 
     # Concatenate with unaltered columns. The remaining variables are the genetic ones.
@@ -458,25 +466,30 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 
     # And a seperate figure for the genetic data.
     with sns.plotting_context(font_scale=1.5):
-        # Remove very small coefficients.
-        coeff_mean_genetic, coeff_std_genetic, genetic_variable_names = remove_coefficients_below_thresshold(
-            coeff_mean_genetic,
-            coeff_std_genetic,
-            genetic_variable_names,
-            thresshold=thresshold,
+        coef_data_frame = pd.DataFrame(
+            {"mean": coeff_mean_genetic, "std": coeff_std_genetic},
+            index=genetic_variable_names,
         )
+
+        coef_data_frame["mean_magnitude"] = abs(coef_data_frame["mean"])
+        max_n = 10
+        top_n_coef = coef_data_frame.sort_values(
+            by="mean_magnitude", ascending=False
+        ).iloc[:max_n]
+
         plt.figure(figsize=(8, 6))
-        plt.title("Genetic variables")
-        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > {:.2f}$)".format(thresshold))
+        plt.title(f"Top-{max_n} genetic variables")
+        plt.xlabel(r"Slope $c_i$ (-)")
         sns.barplot(
-            x=coeff_mean_genetic,
-            xerr=coeff_std_genetic,
-            y=genetic_variable_names,
+            x=top_n_coef["mean"],
+            xerr=top_n_coef["std"],
+            y=top_n_coef.index,
             label="large",
         )
         plt.tight_layout()
-        plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")
-        plt.savefig("figs/{}.eps".format(filenames[1]), bbox_inches="tight")
+        if filenames:
+            plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")
+            plt.savefig("figs/{}.eps".format(filenames[1]), bbox_inches="tight")
 
 
 # from sklearn.linear_model import LogisticRegression
