@@ -5,7 +5,6 @@ import graphviz
 import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
-import pandas as pd
 import scipy as sp
 import seaborn as sns
 from sklearn.manifold import TSNE

@@ -5,7 +5,7 @@ import gensim
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import MaxAbsScaler, OrdinalEncoder
 from sklearn.utils import safe_mask
 
 from const import target_genes
@@ -422,3 +422,46 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
             X.loc[:, column] = X[column].astype(str)
 
         return X
+
+
+class AutoMaxScaler(BaseEstimator, TransformerMixin):
+    """
+    Determine non-categorical columns and max scale the values.
+    """
+
+    def __init__(
+        self,
+        ignore_columns: tuple = tuple(),
+        uniqueness_thresshold_category: Optional[float] = 0.8,
+    ):
+        """
+        Args:
+            uniqueness_thresshold_category: Columns with less unique values than this
+                are considered categorical.
+        """
+        self.ignore_columns_ = list(ignore_columns)
+        self.scaler_ = MaxAbsScaler(copy=True)
+        self.thresshold_ = uniqueness_thresshold_category
+
+    def fit(self, X, y=None):
+        """
+        Determine which columns to min-max scale.
+        """
+        categorical_columns = get_categorical_columns(X, self.thresshold_)
+
+        def is_numeric_and_not_ignored(column):
+            if column not in categorical_columns and column not in self.ignore_columns_:
+                return True
+            return False
+
+        self.columns_to_transform_ = list(filter(is_numeric_and_not_ignored, X.columns))
+        self.scaler_.fit(X[self.columns_to_transform_])
+        return self
+
+    def transform(self, X, y=None):
+        """
+        Max scale the columns and return copy.
+        """
+        data_subframe = X[self.columns_to_transform_]
+        X[self.columns_to_transform_] = self.scaler_.transform(data_subframe)
+        return X.copy()

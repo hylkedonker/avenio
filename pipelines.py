@@ -33,7 +33,7 @@ import numpy as np
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import phenotype_features
-from models import AggregateColumns, Gene2Vec, MergeRareCategories, SparseFeatureFilter
+from models import AggregateColumns, MergeRareCategories, SparseFeatureFilter
 
 
 RANDOM_STATE = 1234

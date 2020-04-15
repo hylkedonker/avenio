@@ -2,7 +2,6 @@ from typing import Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import scipy as sp
 from sklearn.model_selection import train_test_split
 
 from const import phenotype_features
@@ -380,26 +379,6 @@ def merge_mutations_with_phenotype_data(
     )
     X.dropna(subset=["response_grouped"], inplace=True)
     return X
-
-
-def survival_histograms(y, hist_bins: int = 10, cum_hist_bins: int = 15):
-    y_range = (0.0, 1.25 * max(y))
-    # Histogram of patients.
-    p, edges = np.histogram(y, range=y_range, bins=hist_bins)
-    t = (edges[:-1] + edges[1:]) / 2.0
-
-    # Cumulative histogram.
-    res = sp.stats.cumfreq(y, numbins=cum_hist_bins, defaultreallimits=(0.0, max(y)))
-    t_cum = res.lowerlimit + np.linspace(
-        0, res.binsize * res.cumcount.size, res.cumcount.size
-    )
-    n_survive = len(y) - res.cumcount
-
-    # Remove last element which contains 0 survivors.
-    t_cum = t_cum[:-1]
-    n_survive = n_survive[:-1]
-
-    return ((t, p), (t_cum, n_survive))
 
 
 def merge_mutation_spreadsheet_t0_with_t1(
