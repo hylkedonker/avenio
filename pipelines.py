@@ -425,16 +425,6 @@ def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
         # "Pyotr": pipeline_Pyotr(Estimator, **kwargs),
     }
 
-    # Combine Richard & Julian into Lev.
-    # if VotingEstimator is not None:
-    #     vote_kwargs = {
-    #         "estimators": [("phenotype", d["Richard"]), ("mutation", d["Julian"])]
-    #     }
-    #     if type(VotingEstimator) == VotingClassifier:
-    #         vote_kwargs["voting"] = "soft"
-    #     p_Lev = VotingEstimator(**vote_kwargs)
-    #     d["Lev"] = p_Lev
-
     return d
 
 

@@ -13,7 +13,6 @@ from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
 
-from fit import categorical_signal, fit_categorical_survival
 from models import SparseFeatureFilter
 from pipelines import (
     calculate_pass_through_column_names_Richard,
@@ -183,28 +182,6 @@ def view_as_exponential(
     # )
     # Location 3 is lower left corner.
     plt.legend(frameon=False, loc=3)
-
-
-def categorical_signal_summary(
-    X: pd.DataFrame, y: pd.Series, categorical_columns: list
-) -> pd.DataFrame:
-    """
-    Make a summary of all categorical effects.
-    """
-    summary = pd.DataFrame()
-
-    for category in categorical_columns:
-        # Calculate survival statistics for given prior information.
-        df = fit_categorical_survival(X[category], y)
-        # Calculate signal.
-        s = categorical_signal(df)
-        # Add results to summary.
-        s["item"] = s.index
-        s["category"] = category
-        # Add results to summary.
-        summary = summary.append(s, ignore_index=True)
-
-    return summary.set_index(["category", "item"])
 
 
 def remove_parallel_coefficients(coeff_mean, coeff_std, names):
