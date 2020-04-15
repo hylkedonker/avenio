@@ -206,11 +206,11 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
     X_prime[meta_columns] = X_prime[meta_columns].replace(d)
 
     # Partition age in two.
-    young = X_prime["leeftijd"] < 65
+    young = X_prime["Age"] < 65
     X_prime["age"] = "$\geq$ 65"
     X_prime.loc[young, "age"] = "<65"
     # Remove original column.
-    X_prime.drop(columns="leeftijd", inplace=True)
+    X_prime.drop(columns="Age", inplace=True)
 
     return X_prime
 
@@ -230,11 +230,7 @@ def pipeline_Richard(Estimator, **kwargs):
     category_preprocess = ColumnTransformer(
         [
             ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
-            (
-                "age_discretizer",
-                KBinsDiscretizer(n_bins=3, encode="onehot"),
-                ["leeftijd"],
-            ),
+            ("age_discretizer", KBinsDiscretizer(n_bins=3, encode="onehot"), ["Age"]),
         ],
         remainder="passthrough",
     )
@@ -294,11 +290,7 @@ def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
     all_categorical_columns_transformer = ColumnTransformer(
         [
             ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
-            (
-                "age_discretizer",
-                KBinsDiscretizer(n_bins=3, encode="onehot"),
-                ["leeftijd"],
-            ),
+            ("age_discretizer", KBinsDiscretizer(n_bins=3, encode="onehot"), ["Age"]),
         ],
         remainder="passthrough",
     )
@@ -341,14 +333,7 @@ def pipeline_Freeman(Estimator, **kwargs):
     columns_to_encode.append("age")
 
     all_categorical_columns_transformer = ColumnTransformer(
-        [
-            ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
-            # (
-            #     "age_discretizer",
-            #     KBinsDiscretizer(n_bins=3, encode="onehot"),
-            #     ["leeftijd"],
-            # ),
-        ],
+        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
         remainder="passthrough",
     )
 
@@ -573,7 +558,7 @@ def calculate_pass_through_column_names_Richard(pipeline):
     # Remove age column, if necessary.
     column_transformer = pipeline.steps[-2][1]
     if "age_discretizer" in column_transformer.named_transformers_:
-        columns.remove("leeftijd")
+        columns.remove("Age")
     return columns
 
 
@@ -601,7 +586,7 @@ def calculate_pass_through_column_names_Freeman(pipeline):
     # Remove age column, if necessary.
     column_transformer = pipeline.steps[-2][1]
     if "age_discretizer" in column_transformer.named_transformers_:
-        columns.remove("leeftijd")
+        columns.remove("Age")
     return columns
 
 
