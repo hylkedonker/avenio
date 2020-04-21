@@ -40,7 +40,6 @@ def dummy_encode_mutations(
 
 def transform_column_pair(
     data_frame: pd.DataFrame,
-    gene_vocabulary: Iterable,
     transformation: Callable = lambda x, y: y - x,
     column_pair: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
     handle_duplicates="sum",
@@ -51,6 +50,8 @@ def transform_column_pair(
     For each mutation for a given patient, calculate `transformation(f_t0,
     f_t1)` from the allele frequencies measured as t0 and t1.
     """
+    gene_vocabulary = sorted(data_frame["Gene"].unique())
+
     allowed_duplicate_actions = ("min", "max", "ignore", "concat", "sum")
     if handle_duplicates.lower() not in allowed_duplicate_actions:
         raise ValueError(
@@ -106,9 +107,7 @@ def transform_column_pair(
         # Extract allele frequencies at time t0 and t1.
         f_t0, f_t1 = (grouped[column_pair[0]], grouped[column_pair[1]])
 
-        # Carry out the transformation on the two allele frequencies (by default
-        # difference), and store result in the corresponding gene column for the
-        # given patient.
+        # Aggregate results _after_ transformation.
         f = transformation(f_t0, f_t1)
         patient_data_frame.loc[patient_id, gene] = select_from_duplicates(f)
 
@@ -237,6 +236,67 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     return frequent_mutations
 
 
+def coarse_grain_columns(
+    data_frame: pd.DataFrame, operation: Callable = np.sum
+) -> pd.DataFrame:
+    """
+    Coarse grain over coding changes.
+    """
+    # Columns have the form ('ABL1', 'c.2976G>A'), coarse grain over the second
+    # element (the coding change).
+    genes = tuple(zip(*data_frame.columns))[0]
+    unique_genes = np.unique(genes)
+    coarse_grained_sheet = pd.DataFrame(
+        0.0, index=data_frame.index, columns=unique_genes
+    )
+    # Select columns belonging to `gene` and aggregate using `operation`.
+    for gene in unique_genes:
+        gene_columns = list(filter(lambda x: x[0] == gene, data_frame.columns))
+        coarse_grained_sheet[gene] = data_frame[gene_columns].aggregate(
+            operation, axis="columns"
+        )
+
+    return coarse_grained_sheet
+
+
+def transpose_and_transform(
+    data_frame: pd.DataFrame,
+    column_pair: list,
+    transformation: Callable[[float, float], float],
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Tranpose `data_frame`, returning the t0 (column_pair[0]), t1 (column_pair[1]) and
+    transformation(t0, t1) values.
+
+    Transforms `data_frame` with columns ('Patient ID', 'Gene', 'Coding Change') to a
+    data frame with layout 'Patient ID' x ('Gene', 'Coding Change').
+    """
+    patient_ids = data_frame["Patient ID"]
+    # New column name is a pair defined by the values of these two fields.
+    new_columns = tuple(zip(data_frame["Gene"], data_frame["Coding Change"]))
+
+    # Create and fill three transposed sheets: t0, t1 and f(t0, t1).
+    t0_sheet = pd.DataFrame(
+        0.0, index=np.unique(patient_ids), columns=np.unique(new_columns, axis=0)
+    )
+    t1_sheet = t0_sheet.copy()
+    transf_sheet = t0_sheet.copy()
+    for ind in data_frame.index:
+        patient_id = data_frame.loc[ind, "Patient ID"]
+        column_name = (
+            data_frame.loc[ind, "Gene"],
+            data_frame.loc[ind, "Coding Change"],
+        )
+        new_ind = (patient_id, column_name)
+        t0_value = data_frame.loc[ind, column_pair[0]]
+        t1_value = data_frame.loc[ind, column_pair[1]]
+        t0_sheet.loc[new_ind] = t0_value
+        t1_sheet.loc[new_ind] = t1_value
+        transf_sheet.loc[new_ind] = transformation(t0_value, t1_value)
+
+    return t0_sheet.copy(), t1_sheet.copy(), transf_sheet.copy()
+
+
 def load_process_and_store_spreadsheets(
     spread_sheet_filename: str = "variant_list_20200409.xlsx",
     spss_filename: str = "clinical_20200419.sav",
@@ -274,23 +334,23 @@ def load_process_and_store_spreadsheets(
         # Repair dirty cells (with per cent signs etc.).
         clean_mutation_sheet = clean_and_verify_data_frame(mutations, column_pair)
 
-        # Perform `transformation` on the columns.
-        mutations_transposed = transform_column_pair(
-            clean_mutation_sheet,
-            # Vocabulary is the entire dataset.
-            gene_vocabulary=clean_mutation_sheet["Gene"].unique(),
-            column_pair=column_pair,
-            transformation=transformation,
+        # Transpose table, and generate sheet for t0 mutations, t1 mutations, and those
+        # combined with `transformation`.
+        t0_sheet, t1_sheet, transf_sheet = transpose_and_transform(
+            clean_mutation_sheet, column_pair, transformation
+        )
+        mutations_transposed = coarse_grain_columns(transf_sheet, operation=np.sum)
+        pd.testing.assert_frame_equal(
+            mutations_transposed,
+            transform_column_pair(
+                clean_mutation_sheet,
+                column_pair=column_pair,
+                transformation=transformation,
+            ),
         )
 
-        # Add the patients that are not in the mutation list.
-        patient_no_mutations = set(phenotypes["studynumber"]) - set(
-            mutations_transposed.index
-        )
-        # Make the difference set ordered using `tuple`, and then convert to a Series.
-        patient_no_mutations = pd.Series(tuple(patient_no_mutations))
         mutations_transposed = add_mutationless_patients(
-            mutations_transposed, patient_no_mutations
+            mutations_transposed, phenotypes
         )
         # Merge with clinical data.
         final_spreadsheet = merge_mutations_with_phenotype_data(
