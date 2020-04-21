@@ -38,16 +38,15 @@ def dummy_encode_mutations(
     return dummy_data_frame
 
 
-def patient_allele_frequencies(
+def transform_column_pair(
     data_frame: pd.DataFrame,
     gene_vocabulary: Iterable,
     transformation: Callable = lambda x, y: y - x,
-    allele_columns: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
+    column_pair: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
     handle_duplicates="sum",
 ) -> pd.DataFrame:
     """
-    For each patient, calculate allele frequency increase (by default) of
-    mutations.
+    For each patient, pair-wise transform the values in `column_pair`.
 
     For each mutation for a given patient, calculate `transformation(f_t0,
     f_t1)` from the allele frequencies measured as t0 and t1.
@@ -61,20 +60,20 @@ def patient_allele_frequencies(
         )
 
     # The transformation is calculated between two columns (t0 and t1).
-    if len(allele_columns) != 2:
+    if len(column_pair) != 2:
         raise ValueError("Allele frequency columns must be precisely two!")
 
     # The columns that were passed must actually exist.
     column_names = data_frame.columns
-    if allele_columns[0] not in column_names or allele_columns[1] not in column_names:
+    if column_pair[0] not in column_names or column_pair[1] not in column_names:
         raise KeyError(
-            "Column lookup error in `allel_freq_columns` = {}.".format(allele_columns)
+            "Column lookup error in `allel_freq_columns` = {}.".format(column_pair)
         )
 
     # There may not be any NA values in the columns.
     if (
-        sum(data_frame[allele_columns[0]].isna()) > 0
-        or sum(data_frame[allele_columns[1]].isna()) > 0
+        sum(data_frame[column_pair[0]].isna()) > 0
+        or sum(data_frame[column_pair[1]].isna()) > 0
     ):
         raise ValueError("NA values found in allele frequency columns!")
 
@@ -105,7 +104,7 @@ def patient_allele_frequencies(
         patient_id, gene = group_index
 
         # Extract allele frequencies at time t0 and t1.
-        f_t0, f_t1 = (grouped[allele_columns[0]], grouped[allele_columns[1]])
+        f_t0, f_t1 = (grouped[column_pair[0]], grouped[column_pair[1]])
 
         # Carry out the transformation on the two allele frequencies (by default
         # difference), and store result in the corresponding gene column for the
@@ -239,12 +238,12 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
 
 
 def load_process_and_store_spreadsheets(
-    spread_sheet_filename: str = "variant_list_20200406.xlsx",
-    spss_filename: str = "phenotypes_20200406.sav",
+    spread_sheet_filename: str = "variant_list_20200409.xlsx",
+    spss_filename: str = "clinical_20200419.sav",
     transformation: Callable = lambda x, y: y - x,
     columns: List[str] = [
         "Allele Fraction",
-        "No, Mutant Molecules per mL",
+        "No. Mutant Molecules per mL",
         "CNV Score",
     ],
     all_filename_prefix: str = "output/all",
@@ -272,9 +271,16 @@ def load_process_and_store_spreadsheets(
         column_pair = [f"T0: {column}", f"T1: {column}"]
         # Filter out the column pairs, and remove empty fields.
         mutations = spread_sheet[column_pair].dropna(how="all").fillna(0).reset_index()
-        # Repair dirty cells, transpose the data and carry out the transformation.
-        mutations_transposed = clean_and_transpose_data_frame(
-            mutations, column_pair, transformation
+        # Repair dirty cells (with per cent signs etc.).
+        clean_mutation_sheet = clean_and_verify_data_frame(mutations, column_pair)
+
+        # Perform `transformation` on the columns.
+        mutations_transposed = transform_column_pair(
+            clean_mutation_sheet,
+            # Vocabulary is the entire dataset.
+            gene_vocabulary=clean_mutation_sheet["Gene"].unique(),
+            column_pair=column_pair,
+            transformation=transformation,
         )
 
         # Add the patients that are not in the mutation list.
@@ -323,10 +329,8 @@ def data_frame_to_disk(
     X_test.to_csv(test_filename + ".tsv", sep="\t")
 
 
-def clean_and_transpose_data_frame(
-    mutation_data_frame: pd.DataFrame,
-    columns_to_transform: list,
-    transformation: Callable,
+def clean_and_verify_data_frame(
+    mutation_data_frame: pd.DataFrame, columns_to_transform: list
 ) -> pd.DataFrame:
     """
     Clean up data frame records, verify consistency, and transpose to gene columns.
@@ -352,18 +356,7 @@ def clean_and_transpose_data_frame(
     # And that everything went in to the "dirty" records.
     assert dirty_patient_mutations[columns_to_transform].dropna().shape[0] == 0
 
-    # Vocabulary is the entire gene dataset.
-    gene_vocabulary = clean_patient_mutations["Gene"].unique()
-
-    # Perform `transformation` on the columns. That is, calculate change in DNA
-    # mutation.
-    patient_mutation_frequencies = patient_allele_frequencies(
-        clean_patient_mutations,
-        gene_vocabulary,
-        allele_columns=columns_to_transform,
-        transformation=transformation,
-    )
-    return patient_mutation_frequencies
+    return clean_patient_mutations
 
 
 def merge_mutations_with_phenotype_data(
@@ -387,10 +380,15 @@ def merge_mutation_spreadsheet_t0_with_t1(
     """
     The mutation spreadsheet contains rows for t0 and for t1. Merge these rows.
     """
+
+    def get_sample_number(sample_id: str):
+        tokens = str(sample_id).split("_")
+        if len(tokens) > 1:
+            return int(tokens[1])
+        return None
+
     # Determine whether it is t0 or t1 measurement.
-    spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(
-        lambda x: int(x.split("_")[1])
-    )
+    spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(get_sample_number)
     # Replace NA with empty string in order to join the rows using pandas.
     spread_sheet["Coding Change"] = (
         spread_sheet["Coding Change"].astype("string").fillna("")
