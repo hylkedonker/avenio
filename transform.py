@@ -319,7 +319,7 @@ def load_process_and_store_spreadsheets(
     4) Split and store data to disk.
     """
     # Load data from spreadsheet and SPSS files.
-    patient_mutations, phenotypes = load_avenio_files(
+    patient_mutations, clinical_data = load_avenio_files(
         spread_sheet_filename, spss_filename
     )
 
@@ -336,37 +336,29 @@ def load_process_and_store_spreadsheets(
 
         # Transpose table, and generate sheet for t0 mutations, t1 mutations, and those
         # combined with `transformation`.
-        t0_sheet, t1_sheet, transf_sheet = transpose_and_transform(
+        transposed_sheets = transpose_and_transform(
             clean_mutation_sheet, column_pair, transformation
         )
-        mutations_transposed = coarse_grain_columns(transf_sheet, operation=np.sum)
-        pd.testing.assert_frame_equal(
-            mutations_transposed,
-            transform_column_pair(
-                clean_mutation_sheet,
-                column_pair=column_pair,
-                transformation=transformation,
-            ),
-        )
+        sheet_names = ("t0", "t1", "f(t0, t1)")
+        for name, mutation_sheet in zip(sheet_names, transposed_sheets):
+            mutation_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
 
-        mutations_transposed = add_mutationless_patients(
-            mutations_transposed, phenotypes
-        )
-        # Merge with clinical data.
-        final_spreadsheet = merge_mutations_with_phenotype_data(
-            mutations_transposed, phenotypes
-        )
+            mutation_sheet = add_mutationless_patients(mutation_sheet, clinical_data)
+            # Merge with clinical data.
+            final_spreadsheet = merge_mutations_with_phenotype_data(
+                mutation_sheet, clinical_data
+            )
 
-        # Check that all patients are included.
-        assert final_spreadsheet.shape[0] == phenotypes.shape[0]
+            # Check that all patients are included.
+            assert final_spreadsheet.shape[0] == clinical_data.shape[0]
 
-        # And store to disk.
-        data_frame_to_disk(
-            final_spreadsheet,
-            all_filename=all_filename_prefix + f"_{column}",
-            train_filename=train_filename_prefix + f"_{column}",
-            test_filename=test_filename_prefix + f"_{column}",
-        )
+            # And store to disk.
+            data_frame_to_disk(
+                final_spreadsheet,
+                all_filename=all_filename_prefix + f"_{name}__{column}",
+                train_filename=train_filename_prefix + f"_{name}__{column}",
+                test_filename=test_filename_prefix + f"_{name}___{column}",
+            )
 
 
 def data_frame_to_disk(
