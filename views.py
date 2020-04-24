@@ -404,18 +404,8 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     coeff_std_genetic = coeff_std[number_clinical_vars:]
 
     genetic_variable_names = passthrough_columns
-    # Single out numerical clinical variables from passthrough columns.
-    if "TNM-M_count" in passthrough_columns:
-        # The following variables we need to take care of:
-        assert passthrough_columns[-3:] == ["age", "TNM-N", "TNM-M_count"]
-        # Remove the variables from the genetic list.
-        genetic_variable_names = genetic_variable_names[:-3]
-        coeff_mean_genetic = coeff_mean_genetic[:-3]
-        coeff_std_genetic = coeff_std[:-3]
-        # Add the last variable to the clinical list.
-        clinical_variable_names.append("TNM-M_count")
-        coeff_mean_clinical = np.append(coeff_mean_clinical, coeff_mean[-1])
-        coeff_std_clinical = np.append(coeff_std_clinical, coeff_std[-1])
+
+    assert len(clinical_variable_names) + len(genetic_variable_names) == len(coeff_mean)
 
     # Make a plot for the clinical data.
     with sns.plotting_context(font_scale=1.5):
@@ -478,14 +468,32 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
         ).iloc[:max_n]
 
         plt.figure(figsize=(8, 6))
-        plt.title(f"Top-{max_n} genetic variables")
-        plt.xlabel(r"Slope $c_i$ (-)")
+        if coef_data_frame.shape[0] > max_n:
+            plt.title(f"Top-{max_n} genetic variables")
+        from matplotlib import rc
+
+        rc("text.latex", preamble=r"\usepackage{xcolor}")
+
+        def change_variant_label(label_input):
+            gene, variation = label_input.split("_")
+            if variation == "cnv":
+                gene_text = r"\bf{" + gene + "}"
+            else:
+                gene_text = gene
+            return r"$\mathrm{" + gene_text + r"_{" + variation + r"}}$"
+
+        top_n_coef["labels"] = top_n_coef.index.to_series().apply(change_variant_label)
+        c0, c1 = sns.color_palette()[:2]
         sns.barplot(
             x=top_n_coef["mean"],
             xerr=top_n_coef["std"],
-            y=top_n_coef.index,
+            y=top_n_coef["labels"],
+            palette=top_n_coef["labels"].apply(lambda x: c0 if "cnv" in x else c1),
             label="large",
+            color="gray",
         )
+        plt.ylabel("")
+        plt.xlabel(r"Slope $c_i$ (-)")
         plt.tight_layout()
         if filenames:
             plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")

@@ -220,6 +220,39 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
     return X_prime
 
 
+def clinical_preprocessing_steps() -> list:
+    """
+    Standard pipeline preprocessing steps for the clinical data.
+    """
+    return [
+        (
+            "clinical_curation",
+            FunctionTransformer(clinical_data_curation, validate=False),
+        ),
+        (
+            "filter_clinical_variables",
+            FunctionTransformer(drop_specific_phenotypes, validate=False),
+        ),
+    ]
+
+
+def clinical_encoder_step():
+    """
+    Encode the clinical categories as numbers.
+    """
+    columns_to_encode = [
+        column
+        for column in categorical_input_columns
+        if column not in phenotypes_to_drop
+    ]
+    columns_to_encode.append("age")
+
+    return ColumnTransformer(
+        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
+        remainder="passthrough",
+    )
+
+
 def pipeline_Richard(Estimator, **kwargs):
     """
     Phenotype-only pipeline Richard.
@@ -254,45 +287,6 @@ def pipeline_Julian(Estimator, **kwargs):
     return p_Julian
 
 
-def clinical_preprocessing_steps() -> list:
-    """
-    Standard pipeline preprocessing steps for the clinical data.
-    """
-    return [
-        (
-            "clinical_curation",
-            FunctionTransformer(clinical_data_curation, validate=False),
-        ),
-        (
-            "filter_clinical_variables",
-            FunctionTransformer(drop_specific_phenotypes, validate=False),
-        ),
-        (
-            "category_grouper",
-            MergeRareCategories(
-                categorical_columns=None, thresshold=30, verify_categorical_columns=True
-            ),
-        ),
-    ]
-
-
-def clinical_encoder_step():
-    """
-    Encode the clinical categories as numbers.
-    """
-    columns_to_encode = [
-        column
-        for column in categorical_input_columns
-        if column not in phenotypes_to_drop
-    ]
-    columns_to_encode.append("age")
-
-    return ColumnTransformer(
-        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
-        remainder="passthrough",
-    )
-
-
 def pipeline_Freeman(Estimator, **kwargs):
     """
     Pipeline with clinical + genomic data: Freeman.
@@ -301,7 +295,10 @@ def pipeline_Freeman(Estimator, **kwargs):
         *clinical_preprocessing_steps(),
         (
             "filter_rare_mutations",
-            SparseFeatureFilter(top_k_features=6, columns_to_consider=mutation_columns),
+            SparseFeatureFilter(
+                top_k_features=6,
+                columns_to_consider=[f"{c}_snv" for c in mutation_columns],
+            ),
         ),
         ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
         ("encode_clinical_categories", clinical_encoder_step()),
@@ -501,15 +498,7 @@ def calculate_pass_through_column_names_Freeman(pipeline):
     Determine the column names that pass unaltered through the Freeman pipeline.
     """
     # In case of Freeman pipeline.
-    if "filter_rare_mutations" in pipeline.named_steps:
-        first_step_columns = pipeline.named_steps[
-            "filter_rare_mutations"
-        ].columns_to_keep_
-    # For the Freeman_mutational_burden pipeline.
-    elif "aggregate_point_mutations" in pipeline.named_steps:
-        first_step_columns = pipeline.named_steps[
-            "aggregate_point_mutations"
-        ].returned_columns_
+    first_step_columns = pipeline.named_steps["filter_rare_mutations"].columns_to_keep_
 
     columns = [
         column
