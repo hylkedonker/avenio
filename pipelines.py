@@ -254,46 +254,6 @@ def pipeline_Julian(Estimator, **kwargs):
     return p_Julian
 
 
-def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
-    """
-    Freeman pipeline which combines all the point mutations.
-    """
-    columns_to_encode = [
-        column
-        for column in categorical_input_columns
-        if column not in phenotypes_to_drop
-    ]
-    all_categorical_columns_transformer = ColumnTransformer(
-        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
-        remainder="passthrough",
-    )
-
-    # Pipeline with all features, Freeman.
-    p_Freeman_mutation_burd = Pipeline(
-        steps=[
-            (
-                "aggregate_point_mutations",
-                AggregateColumns(
-                    columns=[c + "_snv" for c in mutation_columns],
-                    aggregate_function=np.sum,
-                    aggregate_column_name="snv_mutant_burden",
-                ),
-            ),
-            (
-                "category_grouper",
-                MergeRareCategories(
-                    categorical_columns=columns_to_encode,
-                    thresshold=30,
-                    verify_categorical_columns=True,
-                ),
-            ),
-            ("transform_columns", all_categorical_columns_transformer),
-            ("estimator", Estimator(**kwargs)),
-        ]
-    )
-    return p_Freeman_mutation_burd
-
-
 def clinical_preprocessing_steps() -> list:
     """
     Standard pipeline preprocessing steps for the clinical data.
