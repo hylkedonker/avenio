@@ -339,7 +339,7 @@ def load_process_and_store_spreadsheets(
         transposed_sheets = transpose_and_transform(
             clean_mutation_sheet, column_pair, transformation
         )
-        sheet_names = ("t0", "t1", "f(t0, t1)")
+        sheet_names = ("t0", "t1", transformation.__name__)
         for name, mutation_sheet in zip(sheet_names, transposed_sheets):
             mutation_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
 
