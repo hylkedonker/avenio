@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.pipeline import Pipeline
 
 
 def get_categorical_columns(
@@ -99,3 +100,10 @@ def bootstrap(k):
         return bootstrap_k_fold
 
     return wrap_k_fold
+
+
+def get_sub_pipeline(pipeline, step: int):
+    """
+    Get part of the pipeline upto and including `step`.
+    """
+    return Pipeline(pipeline.steps[:step])

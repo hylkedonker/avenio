@@ -322,6 +322,8 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
                 columns when None are provided.
             unique_ (str): How to handle columns with more than 80 % unique
                 values. Posibble values: {"raise", "ignore"}.
+            verify_categorical_columns (bool): Check that all categorical columns are
+                present in the training data.
         """
         self.thresshold_ = thresshold
         self.unique_column_ = unique_column

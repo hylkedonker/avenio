@@ -224,46 +224,17 @@ def pipeline_Richard(Estimator, **kwargs):
     """
     Phenotype-only pipeline Richard.
     """
-    # A simple one-hot-encoder seems to work best (as opposed to more fancy
-    # catboost encoder).
-    # category_preprocess = CatBoostEncoder(cols=categorical_input_columns)
-    columns_to_encode = [
-        column
-        for column in categorical_input_columns
-        if column not in phenotypes_to_drop
+    steps_Richard = [
+        (
+            "select_clinical_data",
+            FunctionTransformer(select_phenotype_columns, validate=False),
+        ),
+        *clinical_preprocessing_steps(),
+        ("encode_clinical_categories", clinical_encoder_step()),
+        ("estimator", Estimator(**kwargs)),
     ]
-    category_preprocess = ColumnTransformer(
-        [
-            ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
-            ("age_discretizer", KBinsDiscretizer(n_bins=3, encode="onehot"), ["Age"]),
-        ],
-        remainder="passthrough",
-    )
 
-    # Phenotype-only pipeline Richard.
-    p_Richard = Pipeline(
-        steps=[
-            (
-                "select_columns",
-                FunctionTransformer(select_phenotype_columns, validate=False),
-            ),
-            (
-                "category_grouper",
-                MergeRareCategories(
-                    categorical_columns=categorical_input_columns,
-                    thresshold=30,
-                    verify_categorical_columns=False,
-                ),
-            ),
-            (
-                "remove_specific_phenotypes",
-                FunctionTransformer(drop_specific_phenotypes, validate=False),
-            ),
-            ("transform_columns", category_preprocess),
-            ("estimator", Estimator(**kwargs)),
-        ]
-    )
-    return p_Richard
+    return Pipeline(steps=steps_Richard)
 
 
 def pipeline_Julian(Estimator, **kwargs):
@@ -293,10 +264,7 @@ def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
         if column not in phenotypes_to_drop
     ]
     all_categorical_columns_transformer = ColumnTransformer(
-        [
-            ("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode),
-            ("age_discretizer", KBinsDiscretizer(n_bins=3, encode="onehot"), ["Age"]),
-        ],
+        [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
         remainder="passthrough",
     )
 
@@ -326,9 +294,31 @@ def pipeline_Freeman_mutational_burden(Estimator, **kwargs):
     return p_Freeman_mutation_burd
 
 
-def pipeline_Freeman(Estimator, **kwargs):
+def clinical_preprocessing_steps() -> list:
     """
-    All-feature pipeline Freeman.
+    Standard pipeline preprocessing steps for the clinical data.
+    """
+    return [
+        (
+            "clinical_curation",
+            FunctionTransformer(clinical_data_curation, validate=False),
+        ),
+        (
+            "filter_clinical_variables",
+            FunctionTransformer(drop_specific_phenotypes, validate=False),
+        ),
+        (
+            "category_grouper",
+            MergeRareCategories(
+                categorical_columns=None, thresshold=30, verify_categorical_columns=True
+            ),
+        ),
+    ]
+
+
+def clinical_encoder_step():
+    """
+    Encode the clinical categories as numbers.
     """
     columns_to_encode = [
         column
@@ -337,46 +327,28 @@ def pipeline_Freeman(Estimator, **kwargs):
     ]
     columns_to_encode.append("age")
 
-    all_categorical_columns_transformer = ColumnTransformer(
+    return ColumnTransformer(
         [("LabelEncoder", OneHotEncoder(handle_unknown="ignore"), columns_to_encode)],
         remainder="passthrough",
     )
 
-    # Pipeline with all features, Freeman.
-    p_Freeman = Pipeline(
-        steps=[
-            (
-                "clinical_curation",
-                FunctionTransformer(clinical_data_curation, validate=False),
-            ),
-            # (
-            #     "TNM_metastases",
-            #     FunctionTransformer(metastases_columns_to_TNM, validate=False),
-            # ),
-            (
-                "remove_specific_phenotypes",
-                FunctionTransformer(drop_specific_phenotypes, validate=False),
-            ),
-            (
-                "filter_rare_mutations",
-                SparseFeatureFilter(
-                    top_k_features=6, columns_to_consider=mutation_columns
-                ),
-            ),
-            (
-                "category_grouper",
-                MergeRareCategories(
-                    categorical_columns=None,
-                    thresshold=30,
-                    verify_categorical_columns=True,
-                ),
-            ),
-            ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
-            ("transform_columns", all_categorical_columns_transformer),
-            ("estimator", Estimator(**kwargs)),
-        ]
-    )
-    return p_Freeman
+
+def pipeline_Freeman(Estimator, **kwargs):
+    """
+    Pipeline with clinical + genomic data: Freeman.
+    """
+    steps_Freeman = [
+        *clinical_preprocessing_steps(),
+        (
+            "filter_rare_mutations",
+            SparseFeatureFilter(top_k_features=6, columns_to_consider=mutation_columns),
+        ),
+        ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
+        ("encode_clinical_categories", clinical_encoder_step()),
+        ("estimator", Estimator(**kwargs)),
+    ]
+
+    return Pipeline(steps=steps_Freeman)
 
 
 def hybrid_regressor(random_state: int = 1234) -> BaseEstimator:
@@ -495,7 +467,13 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             # converges correctly).
             "solver": "newton-cg",
             "penalty": "l2",
+            # ####### FOR ELASTIC NET#####
+            # "solver": "saga",
+            # "penalty": "elasticnet",
+            # "l1_ratio": 0.025,
+            # ############################
             "class_weight": "balanced",
+            "multi_class": "auto",
             # Make an unbiased model.
             "fit_intercept": False,
             "C": 1.0,
