@@ -1,7 +1,5 @@
 from typing import Callable, Optional, Union
 
-from catboost import CatBoostClassifier
-import gensim
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -164,21 +162,6 @@ class SparseFeatureFilter(BaseEstimator, TransformerMixin):
             return X[:, self.columns_to_keep_]
 
 
-class CustomCatBoostClassifier(CatBoostClassifier):
-    def __init__(self, cat_features, eval_set=None, **kwargs):
-        self.cat_features = cat_features
-        self.eval_set = eval_set
-        super().__init__(**kwargs)
-
-    def fit(self, X, y=None, **fit_params):
-        """
-        Fit catboost classifier.
-        """
-        return super().fit(
-            X, y=y, cat_features=self.cat_features, eval_set=self.eval_set, **fit_params
-        )
-
-
 class ClassifierAsTransformer(BaseEstimator, TransformerMixin):
     """
     Wrap transformer around classifier.
@@ -223,83 +206,6 @@ class ClassifierAsTransformer(BaseEstimator, TransformerMixin):
             y_output = self.encoder.transform(y_output)
 
         return y_output
-
-
-class Gene2Vec(BaseEstimator, TransformerMixin):
-    """
-    Transform gene columns to gene embeddings.
-
-    X'(i,k) = sum_j X_(ij) * gene(j, k)
-    with gene(j, k) the embedding vector.
-    """
-
-    def __init__(
-        self,
-        embedding_model: gensim.models.word2vec.Word2Vec = None,
-        remainder: str = "ignore",
-    ):
-        # Load model if none was passed.
-        if embedding_model is None:
-            self.model = gensim.models.KeyedVectors.load_word2vec_format(
-                "gene2vec_dim_200_iter_9_w2v.txt", binary=False
-            )
-        else:
-            self.model = embedding_model
-
-        if remainder not in ("ignore", "drop", "fail"):
-            raise ValueError(f"Unknown action for remainder={remainder}.")
-        self.unknown_columns_ = remainder
-
-    def fit(self, X: pd.DataFrame, y=None):
-        """
-        Parse columns to process.
-        """
-        # We need the column names for the embeddings.
-        if not isinstance(X, pd.DataFrame):
-            raise TypeError("X must be pandas data frame.")
-
-        if (
-            not set(X.columns).issubset(set(target_genes))
-            and self.unknown_columns_ == "fail"
-        ):
-            raise KeyError(f"Unknown columns in {X.columns}")
-
-        # What columns to use.
-        self.columns_to_transform_ = tuple(
-            column for column in X.columns if column in self.model
-        )
-
-        return self
-
-    def transform(self, X, y=None):
-        """
-        Generate new matrix by summing embedding contributions.
-        """
-        # Allocate memory for storing the embeddings.
-        X_T = np.zeros([X.shape[0], self.model.vector_size])
-
-        for column in self.columns_to_transform_:
-            # Embedding for given gene.
-            v = self.model[column]
-            # Multiply embedding by allele frequency (for each patient). Sum
-            # contributions of all genes.
-            X_T += X[column].values.reshape(-1, 1) * v.reshape(1, -1)
-
-        # Keep remainder of columns when mode is "ignore".
-        if self.unknown_columns_ == "ignore":
-            columns_to_keep = [
-                column
-                for column in X.columns
-                if column not in self.columns_to_transform_
-            ]
-            # When list not empty, append the transformed data.
-            if columns_to_keep:
-                return pd.concat(
-                    [X[columns_to_keep], pd.DataFrame(X_T, index=X.index)], axis=1
-                )
-
-        # Otherwise just drop all other columns (= keep only transformed colums).
-        return pd.DataFrame(X_T).copy()
 
 
 class MergeRareCategories(BaseEstimator, TransformerMixin):
