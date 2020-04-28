@@ -6,7 +6,6 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import MaxAbsScaler, OrdinalEncoder
 from sklearn.utils import safe_mask
 
-from const import target_genes
 from utils import get_categorical_columns
 
 

@@ -1,6 +1,9 @@
 graphviz
 ipdb
 matplotlib
+openpyxl
 pandas
+pyreadstat
 scikit-learn
 seaborn
+xlrd

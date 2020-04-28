@@ -21,7 +21,7 @@ from pipelines import (
 )
 from utils import bootstrap
 
-matplotlib.rc("font", size=22)
+# matplotlib.rc("font", size=22)
 matplotlib.rc("lines", linewidth=4)
 matplotlib.rc("figure", autolayout=True)
 matplotlib.rc("ytick", labelsize="large")
@@ -233,20 +233,6 @@ def remove_coefficients_below_thresshold(data_frame, thresshold=0.05):
     return data_frame.loc[abs(data_frame["mean"]) > thresshold]
 
 
-# def remove_coefficients_below_thresshold(coeff_mean, coeff_std, names, thresshold=0.05):
-#     """
-#     Remove coefficients for which the magnitude |c_i| < thresshold.
-#     """
-#     name_new, coef_mean_new, coef_std_new = [], [], []
-#     for i, y_i in enumerate(coeff_mean):
-#         if abs(y_i) > thresshold:
-#             name_new.append(names[i])
-#             coef_mean_new.append(y_i)
-#             coef_std_new.append(coeff_std[i])
-
-#     return coef_mean_new, coef_std_new, name_new
-
-
 @bootstrap(k=5)
 def fit_estimator_coefficients(X_train, y_train, X_test, y_test, pipeline):
     """
@@ -454,6 +440,8 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
                 plt.savefig("figs/{}.png".format(filenames[0]), bbox_inches="tight")
                 plt.savefig("figs/{}.eps".format(filenames[0]), bbox_inches="tight")
 
+        plot1_limits = plt.xlim()
+
     # And a seperate figure for the genetic data.
     with sns.plotting_context(font_scale=1.5):
         coef_data_frame = pd.DataFrame(
@@ -467,7 +455,8 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
             by="mean_magnitude", ascending=False
         ).iloc[:max_n]
 
-        plt.figure(figsize=(8, 6))
+        # plt.figure(figsize=(6, 8))
+        plt.figure()
         if coef_data_frame.shape[0] > max_n:
             plt.title(f"Top-{max_n} genetic variables")
         from matplotlib import rc
@@ -492,8 +481,9 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
             label="large",
             color="gray",
         )
-        plt.ylabel("")
+        plt.ylabel("Gene")
         plt.xlabel(r"Slope $c_i$ (-)")
+        plt.xlim(plot1_limits)
         plt.tight_layout()
         if filenames:
             plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")

@@ -36,7 +36,6 @@ from const import phenotype_features
 from models import (
     AggregateColumns,
     AutoMaxScaler,
-    MergeRareCategories,
     SparseFeatureFilter,
 )
 
@@ -212,7 +211,7 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
 
     # Partition age in two.
     young = X_prime["Age"] < 65
-    X_prime["age"] = "$\geq$ 65"
+    X_prime["age"] = r"$\geq$ 65"
     X_prime.loc[young, "age"] = "<65"
     # Remove original column.
     X_prime.drop(columns="Age", inplace=True)
@@ -293,13 +292,6 @@ def pipeline_Freeman(Estimator, **kwargs):
     """
     steps_Freeman = [
         *clinical_preprocessing_steps(),
-        # (
-        #     "filter_rare_mutations",
-        #     SparseFeatureFilter(
-        #         top_k_features=6,
-        #         columns_to_consider=[f"{c}_snv" for c in mutation_columns],
-        #     ),
-        # ),
         ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
         ("encode_clinical_categories", clinical_encoder_step()),
         ("estimator", Estimator(**kwargs)),
@@ -497,18 +489,7 @@ def calculate_pass_through_column_names_Freeman(pipeline):
     """
     Determine the column names that pass unaltered through the Freeman pipeline.
     """
-    # In case of Freeman pipeline.
-    first_step_columns = pipeline.named_steps["filter_rare_mutations"].columns_to_keep_
-
-    columns = [
-        column
-        for column in first_step_columns
-        if column not in categorical_input_columns
-        if column not in phenotypes_to_drop
-    ]
-    # Remove age column, because `clinical_data_curation` made it categorical.
-    columns.remove("age")
-    return columns
+    return pipeline.named_steps["normalise_genomic_data"].columns_to_transform_
 
 
 def reconstruct_categorical_variable_names(pipeline):
