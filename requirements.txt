@@ -1,0 +1,6 @@
+graphviz
+ipdb
+matplotlib
+pandas
+scikit-learn
+seaborn
