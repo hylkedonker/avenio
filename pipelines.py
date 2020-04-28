@@ -293,13 +293,13 @@ def pipeline_Freeman(Estimator, **kwargs):
     """
     steps_Freeman = [
         *clinical_preprocessing_steps(),
-        (
-            "filter_rare_mutations",
-            SparseFeatureFilter(
-                top_k_features=6,
-                columns_to_consider=[f"{c}_snv" for c in mutation_columns],
-            ),
-        ),
+        # (
+        #     "filter_rare_mutations",
+        #     SparseFeatureFilter(
+        #         top_k_features=6,
+        #         columns_to_consider=[f"{c}_snv" for c in mutation_columns],
+        #     ),
+        # ),
         ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
         ("encode_clinical_categories", clinical_encoder_step()),
         ("estimator", Estimator(**kwargs)),
