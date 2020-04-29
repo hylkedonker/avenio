@@ -184,7 +184,7 @@ target_genes = [
 
 
 # Phenotype features that serve as input for the model.
-phenotype_features = [
+clinical_features = [
     "gender",
     "Age",
     "stage",

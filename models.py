@@ -337,7 +337,7 @@ class AutoMaxScaler(BaseEstimator, TransformerMixin):
     """
 
     def __init__(
-        self, ignore_columns: list = [], uniqueness_thresshold: Optional[float] = 0.8
+        self, ignore_columns: list = [], uniqueness_thresshold: Optional[float] = None
     ):
         """
         Args:

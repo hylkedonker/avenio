@@ -371,6 +371,8 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     """
     Infer the variable names and plot the coefficients.
     """
+    assert len(np.unique(y)) == 2
+
     # Calculate coefficients' mean and standard deviation of the bootstrapped model.
     bootstrapped_coefficients = fit_model_coefficients(X, y, pipeline)
     coeff_mean, coeff_std = bootstrapped_coefficients
@@ -499,7 +501,8 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 #     "output/train__harmonic_mean__Allele Fraction.tsv",
 #     "output/train__harmonic_mean__CNV Score.tsv",
 # )
-# y_train_resp = y_train_hm["response_grouped"]
+# pos_label = 'responder (pr+cr)'
+# y_train_resp = y_train_hm["response_grouped"]  == pos_label
 # parameters = {"solver": "newton-cg"}
 # logistic_Freeman = pipeline_Freeman(LogisticRegression, **parameters)
 # view_linear_model_freeman(X_train_hm, y_train_resp, logistic_Freeman, thresshold=0.05)

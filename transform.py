@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from const import phenotype_features
+from const import clinical_features
 from source import (
     add_mutationless_patients,
     load_avenio_files,
@@ -414,7 +414,7 @@ def clean_and_verify_data_frame(
 def merge_mutations_with_phenotype_data(
     transposed_mutation_data_frame: pd.DataFrame, phenotype_data_frame: pd.DataFrame
 ) -> pd.DataFrame:
-    phenotypes_to_keep = phenotype_features + phenotype_labels
+    phenotypes_to_keep = clinical_features + phenotype_labels
     # Combine mutation data and phenotype data.
     X = pd.merge(
         left=transposed_mutation_data_frame,
@@ -500,10 +500,10 @@ def combine_tsv_files(
     assert set(X_train_a.index.unique()) == set(X_train_b.index.unique())
 
     # Remove phenotype columns to get the genetic columns.
-    genetic_columns_b = list(set(X_train_b.columns) - set(phenotype_features))
+    genetic_columns_b = list(set(X_train_b.columns) - set(clinical_features))
     genetic_columns_b.sort()
     # We want to rename only the genetic columns, not the phenotypes.
-    genetic_columns_a = list(set(X_train_a.columns) - set(phenotype_features))
+    genetic_columns_a = list(set(X_train_a.columns) - set(clinical_features))
     rename_table_a = {
         column_name: column_name + suffixes[0] for column_name in genetic_columns_a
     }

@@ -32,7 +32,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import numpy as np
 
 from const import categorical_phenotypes as categorical_input_columns
-from const import phenotype_features
+from const import clinical_features
 from models import (
     AggregateColumns,
     AutoMaxScaler,
@@ -143,7 +143,7 @@ def select_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     Ignore mutaton data columns.
     """
     # The following list does not contain phenotypes that are not in `X`.
-    phenotype_columns = [column for column in X.columns if column in phenotype_features]
+    phenotype_columns = [column for column in X.columns if column in clinical_features]
     return X[phenotype_columns].copy()
 
 
@@ -153,7 +153,7 @@ def select_no_phenotype_columns(X: pd.DataFrame) -> pd.DataFrame:
     """
     # Maintain order of columns.
     no_phenotype_columns = [
-        column for column in X.columns if column not in phenotype_features
+        column for column in X.columns if column not in clinical_features
     ]
     return X[no_phenotype_columns].copy()
 
@@ -216,6 +216,10 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
     # Remove original column.
     X_prime.drop(columns="Age", inplace=True)
 
+    # All clinical variables are categories.
+    new_clinical_features = clinical_features.copy()
+    new_clinical_features[new_clinical_features.index('Age')] = 'age'
+    X_prime[new_clinical_features] = X_prime[new_clinical_features].astype('category')
     return X_prime
 
 
@@ -474,7 +478,7 @@ def calculate_pass_through_column_names_Richard(pipeline):
     """
     columns = [
         column
-        for column in phenotype_features
+        for column in clinical_features
         if column not in categorical_input_columns
         if column not in phenotypes_to_drop
     ]

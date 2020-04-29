@@ -21,6 +21,11 @@ def get_categorical_columns(
     categorical_columns = []
     for column in data_frame.columns:
         values = data_frame[column]
+
+        if values.dtype.name == "category":
+            categorical_columns.append(column)
+            continue
+
         # This is a dirty way to check if it is non-numeric, but pandas thinks
         # all the columns are strings.
         try:
