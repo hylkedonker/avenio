@@ -163,27 +163,6 @@ def drop_specific_phenotypes(X: pd.DataFrame) -> pd.DataFrame:
     return X_prime.copy()
 
 
-def metastases_columns_to_TNM(X: pd.DataFrame) -> pd.DataFrame:
-    """
-    Group the metastases columns according to TNM staging system.
-    """
-    X_prime = X.copy()
-
-    # Indicate presence of lymphnode metastasis (the primary metastasis is always
-    # present for this data set).
-    d = {"no metastasis present": "absent", "metastasis present": "present"}
-    X_prime["TNM-N"] = X_prime["lymfmeta"].replace(d)
-
-    # Count the number of distant metasteses regions.
-    X_prime["TNM-M_count"] = (
-        X_prime[["brainmeta", "adrenalmeta", "livermeta", "skeletonmeta"]]
-        .replace({"no metastasis present": 0, "metastasis present": 1})
-        .sum(axis=1)
-    )
-
-    return X_prime.drop(columns=meta_columns)
-
-
 def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
     """
     Further curation of the clinical data.
