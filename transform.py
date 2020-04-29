@@ -1,7 +1,7 @@
 from typing import Callable, Iterable, List, Optional, Tuple
-
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
 from const import clinical_features
@@ -11,6 +11,7 @@ from source import (
     phenotype_labels,
     read_preprocessed_data,
 )
+from pipelines import pipeline_Freeman, pipeline_Richard
 
 
 def dummy_encode_mutations(
@@ -525,3 +526,37 @@ def combine_tsv_files(
     assert set(X_train.index.unique()) == set(y_train.index.unique())
 
     return X_train, y_train
+
+
+def generate_data_pairs(filename_prefix: str, snv_type: str) -> dict:
+    """
+    Combine SNV and CNV data for t0, t1, dt and harmonic mean in (X, y) pairs.
+    """
+    datasets = ["difference", "harmonic_mean", "t0", "t1"]
+    pos_label = "responder (pr+cr)"
+    named_pairs = {}
+    for data_type in datasets:
+        type_prefix = f"{filename_prefix}__{data_type}"
+        X, y = combine_tsv_files(
+            f"{type_prefix}__{snv_type}.tsv", f"{type_prefix}__CNV Score.tsv"
+        )
+        y = y["response_grouped"] == pos_label
+        named_pairs[data_type] = (X, y)
+    return named_pairs
+
+
+def generate_model_data_pairs(data_pairs: dict, model_parameters: dict) -> dict:
+    """
+    Combine data sets for different time points in (model, (X, y)) pairs.
+
+    See `generate_data_pairs`.
+    """
+    logistic_Freeman = pipeline_Freeman(LogisticRegression, **model_parameters)
+    logistic_Richard = pipeline_Richard(LogisticRegression, **model_parameters)
+    return {
+        "Clinical": (logistic_Richard, data_pairs["difference"]),
+        "Clinical +\n Genomic $t_0$": (logistic_Freeman, data_pairs["t0"]),
+        "Clinical +\n Genomic $t_1$": (logistic_Freeman, data_pairs["t1"]),
+        "Clinical +\n Genomic $\Delta t$": (logistic_Freeman, data_pairs["difference"]),
+        "Clinical +\n Genomic $h(t_0, t_1)$": (logistic_Freeman, data_pairs["harmonic_mean"]),
+    }

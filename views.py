@@ -1,18 +1,19 @@
 from copy import copy
-from typing import Iterable, Optional
+from typing import Dict, Iterable, Optional, Tuple
 
 import graphviz
 import matplotlib
 from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
-import scipy as sp
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
 
+from transform import combine_tsv_files
 from models import SparseFeatureFilter
 from pipelines import (
     calculate_pass_through_column_names_Richard,
@@ -131,57 +132,6 @@ def view_pipelines(pipelines: dict, X, y, random_state: int = 1234):
 
 def filter_outliers(array: Iterable, outlier_indices: list) -> np.array:
     return np.array([a for i, a in enumerate(array) if i not in outlier_indices])
-
-
-def view_as_exponential(
-    t, p, outlier_indices=[], markers=["o", "-"], text_location="above", label=""
-):
-    # Make a fit without outliers.
-    slope, intercept, r_value, p_value, std_err = sp.stats.linregress(
-        filter_outliers(t, outlier_indices), filter_outliers(np.log(p), outlier_indices)
-    )
-
-    tau = -1.0 / slope * np.log(2)
-
-    tau_text = r"$\tau={:.0f}$ days".format(tau)
-    R_text = "$R^2={:.2f}$".format(r_value ** 2)
-    fit_text = tau_text + ", " + R_text
-
-    p = plt.plot(t, np.log(p), markers[0], label=label)
-    ca = plt.gca()
-    xlim = np.array(ca.get_xlim())
-    plt.plot(
-        xlim,
-        slope * xlim + intercept,
-        markers[1],
-        label=fit_text,
-        color=p[0].get_color(),
-    )
-    # plt.xlim([-1, max(t) + 1])
-    plt.xlabel(r"$t$ (days)")
-    plt.ylabel(r"$\ln[n(t)]$")
-
-    # x_centre = (xlim[1] - xlim[0]) / 2.0
-    # y_centre = x_centre * slope + intercept
-    # text_loc = np.array([x_centre, y_centre])
-    # if text_location == "above":
-    #     text_loc *= 1.2
-    # elif text_location == "below":
-    #     text_loc * 0.8
-    # else:
-    #     text_loc = text_location
-
-    # ca.text(
-    #     text_loc[0],
-    #     text_loc[1],
-    #     fit_text,
-    #     ha="center",
-    #     va="center",
-    #     # transform=ca.transAxes,
-    #     fontsize="xx-large",
-    # )
-    # Location 3 is lower left corner.
-    plt.legend(frameon=False, loc=3)
 
 
 def remove_parallel_coefficients(coeff_mean, coeff_std, names):
@@ -492,6 +442,25 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
             plt.savefig("figs/{}.eps".format(filenames[1]), bbox_inches="tight")
 
 
+def compare_prognostic_value_genomic_information(
+    feature_label_pairs: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]], plot_label = None
+):
+    """
+    feature_label_pairs: Pairs of (model, (X, y)) to make a comparison.
+    """
+    results = pd.DataFrame(index=feature_label_pairs.keys(), columns=["mean", "std"])
+    for label, (model, (X, y)) in feature_label_pairs.items():
+        scores = cross_val_score(model, X, y, scoring="roc_auc", cv=5)
+        results.loc[label, "mean"] = np.mean(scores)
+        results.loc[label, "std"] = np.std(scores)
+    plt.errorbar(x=results.index, y=results["mean"], yerr=results["std"], label=plot_label)
+    degrees = 90
+    plt.xticks(rotation=degrees)
+    plt.ylim([0.5, 1.0])
+    plt.ylabel("AUC ROC")
+    plt.legend(frameon=False)
+
+
 # from sklearn.linear_model import LogisticRegression
 # from transform import combine_tsv_files
 # from pipelines import benchmark_pipelines, build_classifier_pipelines, pipeline_Freeman
@@ -506,3 +475,30 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 # parameters = {"solver": "newton-cg"}
 # logistic_Freeman = pipeline_Freeman(LogisticRegression, **parameters)
 # view_linear_model_freeman(X_train_hm, y_train_resp, logistic_Freeman, thresshold=0.05)
+
+# from sklearn.linear_model import LogisticRegression
+# from transform import combine_tsv_files
+# from pipelines import (
+#     benchmark_pipelines,
+#     build_classifier_pipelines,
+#     pipeline_Freeman,
+#     pipeline_Richard,
+# )
+
+
+# parameters = {
+#     "C": 0.1,
+#     "class_weight": "balanced",
+#     "solver": "newton-cg",
+# }
+# mutant_data_pairs = generate_data_pairs(
+#     filename_prefix="output/train", snv_type="No. Mutant Molecules per mL"
+# )
+# vaf_data_pairs = generate_data_pairs(
+#     filename_prefix="output/train", snv_type="Allele Fraction"
+# )
+# model_mutant_data_pairs = generate_model_data_pairs(mutant_data_pairs, parameters)
+# model_vaf_data_pairs = generate_model_data_pairs(vaf_data_pairs, parameters)
+# compare_prognostic_value_genomic_information(model_mutant_data_pairs, plot_label="Mutant concentration")
+# compare_prognostic_value_genomic_information(model_vaf_data_pairs, plot_label='Allele fraction')
+# plt.savefig('figs/comparison_genomic_data.png', bbox_inches="tight")
