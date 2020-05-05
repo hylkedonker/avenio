@@ -317,7 +317,7 @@ def merge_partitioned_coefficients(partition_a: tuple, partition_b: tuple):
     return (new_mean, new_std, np.array(tuple(new_names)))
 
 
-def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
+def view_linear_model_freeman(X, y, pipeline, top_n=10, filenames=None):
     """
     Infer the variable names and plot the coefficients.
     """
@@ -402,7 +402,10 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
         )
 
         coef_data_frame["mean_magnitude"] = abs(coef_data_frame["mean"])
-        max_n = 10
+        max_n = top_n
+        if top_n is None:
+            max_n = coeff_mean_genetic.shape[0] + 1
+
         top_n_coef = coef_data_frame.sort_values(
             by="mean_magnitude", ascending=False
         ).iloc[:max_n]
@@ -433,7 +436,7 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
             label="large",
             color="gray",
         )
-        plt.ylabel("Gene")
+        # plt.ylabel("Gene")
         plt.xlabel(r"Slope $c_i$ (-)")
         plt.xlim(plot1_limits)
         plt.tight_layout()
@@ -443,7 +446,7 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 
 
 def compare_prognostic_value_genomic_information(
-    feature_label_pairs: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]], plot_label = None
+    feature_label_pairs: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]], plot_label=None
 ):
     """
     feature_label_pairs: Pairs of (model, (X, y)) to make a comparison.
@@ -453,7 +456,9 @@ def compare_prognostic_value_genomic_information(
         scores = cross_val_score(model, X, y, scoring="roc_auc", cv=5)
         results.loc[label, "mean"] = np.mean(scores)
         results.loc[label, "std"] = np.std(scores)
-    plt.errorbar(x=results.index, y=results["mean"], yerr=results["std"], label=plot_label)
+    plt.errorbar(
+        x=results.index, y=results["mean"], yerr=results["std"], label=plot_label
+    )
     degrees = 90
     plt.xticks(rotation=degrees)
     plt.ylim([0.5, 1.0])

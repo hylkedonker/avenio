@@ -238,26 +238,35 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
 
 
 def coarse_grain_columns(
-    data_frame: pd.DataFrame, operation: Callable = np.sum
+    data_frame: pd.DataFrame, operation: Callable = np.sum,
 ) -> pd.DataFrame:
     """
     Coarse grain over coding changes.
-    """
-    # Columns have the form ('ABL1', 'c.2976G>A'), coarse grain over the second
-    # element (the coding change).
-    genes = tuple(zip(*data_frame.columns))[0]
-    unique_genes = np.unique(genes)
-    coarse_grained_sheet = pd.DataFrame(
-        0.0, index=data_frame.index, columns=unique_genes
-    )
-    # Select columns belonging to `gene` and aggregate using `operation`.
-    for gene in unique_genes:
-        gene_columns = list(filter(lambda x: x[0] == gene, data_frame.columns))
-        coarse_grained_sheet[gene] = data_frame[gene_columns].aggregate(
-            operation, axis="columns"
-        )
 
-    return coarse_grained_sheet
+    Columns have the form, e.g., ('hsa05226', 'ABL1', 'c.2976G>A'), coarse grain over
+    the last element (the coding change in this case).
+
+    Args:
+        drop_remaining_grain_labels (bool): Whether to drop 'hsa05226' in the example
+            above.
+    """
+    grain_labels = tuple(zip(*data_frame.columns))
+    coarse_labels = tuple(zip(*grain_labels[:-1]))  # Repack all but the last element.
+
+    unique_labels = np.unique(coarse_labels, axis=0)
+    coarse_sheet = pd.DataFrame(0.0, index=data_frame.index, columns=unique_labels)
+
+    # Select columns belonging to `gene` and aggregate using `operation`.
+    for label in coarse_sheet.columns:
+
+        def select_grains(x):
+            """ Select all columns belonging to `label` coarseness. """
+            return x[:-1] == label
+
+        grains = list(filter(select_grains, data_frame.columns))
+        coarse_sheet[label] = data_frame[grains].aggregate(operation, axis="columns")
+
+    return coarse_sheet
 
 
 def transpose_and_transform(
@@ -270,11 +279,17 @@ def transpose_and_transform(
     transformation(t0, t1) values.
 
     Transforms `data_frame` with columns ('Patient ID', 'Gene', 'Coding Change') to a
-    data frame with layout 'Patient ID' x ('Gene', 'Coding Change').
+    data frame with layout 'Patient ID' x ('Gene', 'Coding Change', 'Pathway').
     """
     patient_ids = data_frame["Patient ID"]
+    # Assign pathway to each gene.
+    pathways = pd.read_excel("gene_pathway_most_frequent.xlsx")
+    gene_path_map = dict(zip(pathways.iloc[:, 0], pathways.iloc[:, 1]))
+    data_frame["Pathway"] = data_frame["Gene"].map(gene_path_map)
+
     # New column name is a pair defined by the values of these two fields.
-    new_columns = tuple(zip(data_frame["Gene"], data_frame["Coding Change"]))
+    names = ["Pathway", "Gene", "Coding Change"]
+    new_columns = tuple(zip(*(data_frame[c] for c in names)))
 
     # Create and fill three transposed sheets: t0, t1 and f(t0, t1).
     t0_sheet = pd.DataFrame(
@@ -284,10 +299,7 @@ def transpose_and_transform(
     transf_sheet = t0_sheet.copy()
     for ind in data_frame.index:
         patient_id = data_frame.loc[ind, "Patient ID"]
-        column_name = (
-            data_frame.loc[ind, "Gene"],
-            data_frame.loc[ind, "Coding Change"],
-        )
+        column_name = tuple(data_frame.loc[ind, c] for c in names)
         new_ind = (patient_id, column_name)
         t0_value = data_frame.loc[ind, column_pair[0]]
         t1_value = data_frame.loc[ind, column_pair[1]]
@@ -340,26 +352,39 @@ def load_process_and_store_spreadsheets(
         transposed_sheets = transpose_and_transform(
             clean_mutation_sheet, column_pair, transformation
         )
-        sheet_names = ("t0", "t1", transformation.__name__)
-        for name, mutation_sheet in zip(sheet_names, transposed_sheets):
-            mutation_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
-
-            mutation_sheet = add_mutationless_patients(mutation_sheet, clinical_data)
-            # Merge with clinical data.
-            final_spreadsheet = merge_mutations_with_phenotype_data(
-                mutation_sheet, clinical_data
+        timepoint_names = ("t0", "t1", transformation.__name__)
+        for time_name, mutation_sheet in zip(timepoint_names, transposed_sheets):
+            gene_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
+            pathway_sheet = coarse_grain_columns(gene_sheet, operation=np.sum)
+            gene_sheet.columns = gene_sheet.columns.to_series().apply(lambda x: x[1])
+            pathway_sheet.columns = pathway_sheet.columns.to_series().apply(
+                lambda x: x[0]
             )
 
-            # Check that all patients are included.
-            assert final_spreadsheet.shape[0] == clinical_data.shape[0]
+            # Make a sheet for each level of coarseness.
+            for coarseness_name, coarse_sheet in {
+                "gene": gene_sheet,
+                "pathway": pathway_sheet,
+            }.items():
+                coarse_sheet = add_mutationless_patients(coarse_sheet, clinical_data)
+                # Merge with clinical data.
+                final_spreadsheet = merge_mutations_with_phenotype_data(
+                    coarse_sheet, clinical_data
+                )
 
-            # And store to disk.
-            data_frame_to_disk(
-                final_spreadsheet,
-                all_filename=all_filename_prefix + f"_{name}__{column}",
-                train_filename=train_filename_prefix + f"_{name}__{column}",
-                test_filename=test_filename_prefix + f"_{name}___{column}",
-            )
+                # Check that all patients are included.
+                assert final_spreadsheet.shape[0] == clinical_data.shape[0]
+
+                # And store to disk.
+                data_frame_to_disk(
+                    final_spreadsheet,
+                    all_filename=all_filename_prefix
+                    + f"_{coarseness_name}__{time_name}__{column}",
+                    train_filename=train_filename_prefix
+                    + f"_{coarseness_name}__{time_name}__{column}",
+                    test_filename=test_filename_prefix
+                    + f"_{coarseness_name}__{time_name}___{column}",
+                )
 
 
 def data_frame_to_disk(
@@ -558,5 +583,8 @@ def generate_model_data_pairs(data_pairs: dict, model_parameters: dict) -> dict:
         "Clinical +\n Genomic $t_0$": (logistic_Freeman, data_pairs["t0"]),
         "Clinical +\n Genomic $t_1$": (logistic_Freeman, data_pairs["t1"]),
         "Clinical +\n Genomic $\Delta t$": (logistic_Freeman, data_pairs["difference"]),
-        "Clinical +\n Genomic $h(t_0, t_1)$": (logistic_Freeman, data_pairs["harmonic_mean"]),
+        "Clinical +\n Genomic $h(t_0, t_1)$": (
+            logistic_Freeman,
+            data_pairs["harmonic_mean"],
+        ),
     }

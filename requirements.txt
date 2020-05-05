@@ -2,6 +2,8 @@ graphviz
 ipdb
 matplotlib
 openpyxl
+lxml
+bs4
 pandas
 pyreadstat
 scikit-learn
