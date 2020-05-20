@@ -1,17 +1,17 @@
 from typing import Callable, Iterable, List, Optional, Tuple
-
 import numpy as np
 import pandas as pd
-import scipy as sp
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
-from const import phenotype_features
+from const import clinical_features
 from source import (
     add_mutationless_patients,
     load_avenio_files,
     phenotype_labels,
     read_preprocessed_data,
 )
+from pipelines import pipeline_Freeman, pipeline_Richard
 
 
 def dummy_encode_mutations(
@@ -39,20 +39,20 @@ def dummy_encode_mutations(
     return dummy_data_frame
 
 
-def patient_allele_frequencies(
+def transform_column_pair(
     data_frame: pd.DataFrame,
-    gene_vocabulary: Iterable,
     transformation: Callable = lambda x, y: y - x,
-    allele_columns: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
+    column_pair: List[str] = ["T0: Allele \nFraction", "T1: Allele Fraction"],
     handle_duplicates="sum",
 ) -> pd.DataFrame:
     """
-    For each patient, calculate allele frequency increase (by default) of
-    mutations.
+    For each patient, pair-wise transform the values in `column_pair`.
 
     For each mutation for a given patient, calculate `transformation(f_t0,
     f_t1)` from the allele frequencies measured as t0 and t1.
     """
+    gene_vocabulary = sorted(data_frame["Gene"].unique())
+
     allowed_duplicate_actions = ("min", "max", "ignore", "concat", "sum")
     if handle_duplicates.lower() not in allowed_duplicate_actions:
         raise ValueError(
@@ -62,20 +62,20 @@ def patient_allele_frequencies(
         )
 
     # The transformation is calculated between two columns (t0 and t1).
-    if len(allele_columns) != 2:
+    if len(column_pair) != 2:
         raise ValueError("Allele frequency columns must be precisely two!")
 
     # The columns that were passed must actually exist.
     column_names = data_frame.columns
-    if allele_columns[0] not in column_names or allele_columns[1] not in column_names:
+    if column_pair[0] not in column_names or column_pair[1] not in column_names:
         raise KeyError(
-            "Column lookup error in `allel_freq_columns` = {}.".format(allele_columns)
+            "Column lookup error in `allel_freq_columns` = {}.".format(column_pair)
         )
 
     # There may not be any NA values in the columns.
     if (
-        sum(data_frame[allele_columns[0]].isna()) > 0
-        or sum(data_frame[allele_columns[1]].isna()) > 0
+        sum(data_frame[column_pair[0]].isna()) > 0
+        or sum(data_frame[column_pair[1]].isna()) > 0
     ):
         raise ValueError("NA values found in allele frequency columns!")
 
@@ -106,11 +106,9 @@ def patient_allele_frequencies(
         patient_id, gene = group_index
 
         # Extract allele frequencies at time t0 and t1.
-        f_t0, f_t1 = (grouped[allele_columns[0]], grouped[allele_columns[1]])
+        f_t0, f_t1 = (grouped[column_pair[0]], grouped[column_pair[1]])
 
-        # Carry out the transformation on the two allele frequencies (by default
-        # difference), and store result in the corresponding gene column for the
-        # given patient.
+        # Aggregate results _after_ transformation.
         f = transformation(f_t0, f_t1)
         patient_data_frame.loc[patient_id, gene] = select_from_duplicates(f)
 
@@ -239,6 +237,79 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     return frequent_mutations
 
 
+def coarse_grain_columns(
+    data_frame: pd.DataFrame, operation: Callable = np.sum
+) -> pd.DataFrame:
+    """
+    Coarse grain over coding changes.
+
+    Columns have the form, e.g., ('hsa05226', 'ABL1', 'c.2976G>A'), coarse grain over
+    the last element (the coding change in this case).
+
+    Args:
+        drop_remaining_grain_labels (bool): Whether to drop 'hsa05226' in the example
+            above.
+    """
+    grain_labels = tuple(zip(*data_frame.columns))
+    coarse_labels = tuple(zip(*grain_labels[:-1]))  # Repack all but the last element.
+
+    unique_labels = np.unique(coarse_labels, axis=0)
+    coarse_sheet = pd.DataFrame(0.0, index=data_frame.index, columns=unique_labels)
+
+    # Select columns belonging to `gene` and aggregate using `operation`.
+    for label in coarse_sheet.columns:
+
+        def select_grains(x):
+            """ Select all columns belonging to `label` coarseness. """
+            return x[:-1] == label
+
+        grains = list(filter(select_grains, data_frame.columns))
+        coarse_sheet[label] = data_frame[grains].aggregate(operation, axis="columns")
+
+    return coarse_sheet
+
+
+def transpose_and_transform(
+    data_frame: pd.DataFrame,
+    column_pair: list,
+    transformation: Callable[[float, float], float],
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Tranpose `data_frame`, returning the t0 (column_pair[0]), t1 (column_pair[1]) and
+    transformation(t0, t1) values.
+
+    Transforms `data_frame` with columns ('Patient ID', 'Gene', 'Coding Change') to a
+    data frame with layout 'Patient ID' x ('Gene', 'Coding Change', 'Pathway').
+    """
+    patient_ids = data_frame["Patient ID"]
+    # Assign pathway to each gene.
+    pathways = pd.read_excel("gene_pathway_most_frequent.xlsx")
+    gene_path_map = dict(zip(pathways.iloc[:, 0], pathways.iloc[:, 1]))
+    data_frame["Pathway"] = data_frame["Gene"].map(gene_path_map)
+
+    # New column name is a pair defined by the values of these two fields.
+    names = ["Pathway", "Gene", "Coding Change"]
+    new_columns = tuple(zip(*(data_frame[c] for c in names)))
+
+    # Create and fill three transposed sheets: t0, t1 and f(t0, t1).
+    t0_sheet = pd.DataFrame(
+        0.0, index=np.unique(patient_ids), columns=np.unique(new_columns, axis=0)
+    )
+    t1_sheet = t0_sheet.copy()
+    transf_sheet = t0_sheet.copy()
+    for ind in data_frame.index:
+        patient_id = data_frame.loc[ind, "Patient ID"]
+        column_name = tuple(data_frame.loc[ind, c] for c in names)
+        new_ind = (patient_id, column_name)
+        t0_value = data_frame.loc[ind, column_pair[0]]
+        t1_value = data_frame.loc[ind, column_pair[1]]
+        t0_sheet.loc[new_ind] = t0_value
+        t1_sheet.loc[new_ind] = t1_value
+        transf_sheet.loc[new_ind] = transformation(t0_value, t1_value)
+
+    return t0_sheet.copy(), t1_sheet.copy(), transf_sheet.copy()
+
+
 def load_process_and_store_spreadsheets(
     spread_sheet_filename: str = "variant_list_20200409.xlsx",
     spss_filename: str = "clinical_20200420.sav",
@@ -261,7 +332,7 @@ def load_process_and_store_spreadsheets(
     4) Split and store data to disk.
     """
     # Load data from spreadsheet and SPSS files.
-    patient_mutations, phenotypes = load_avenio_files(
+    patient_mutations, clinical_data = load_avenio_files(
         spread_sheet_filename, spss_filename
     )
 
@@ -273,35 +344,47 @@ def load_process_and_store_spreadsheets(
         column_pair = [f"T0: {column}", f"T1: {column}"]
         # Filter out the column pairs, and remove empty fields.
         mutations = spread_sheet[column_pair].dropna(how="all").fillna(0).reset_index()
-        # Repair dirty cells, transpose the data and carry out the transformation.
-        mutations_transposed = clean_and_transpose_data_frame(
-            mutations, column_pair, transformation
-        )
+        # Repair dirty cells (with per cent signs etc.).
+        clean_mutation_sheet = clean_and_verify_data_frame(mutations, column_pair)
 
-        # Add the patients that are not in the mutation list.
-        patient_no_mutations = set(phenotypes["studynumber"]) - set(
-            mutations_transposed.index
+        # Transpose table, and generate sheet for t0 mutations, t1 mutations, and those
+        # combined with `transformation`.
+        transposed_sheets = transpose_and_transform(
+            clean_mutation_sheet, column_pair, transformation
         )
-        # Make the difference set ordered using `tuple`, and then convert to a Series.
-        patient_no_mutations = pd.Series(tuple(patient_no_mutations))
-        mutations_transposed = add_mutationless_patients(
-            mutations_transposed, patient_no_mutations
-        )
-        # Merge with clinical data.
-        final_spreadsheet = merge_mutations_with_phenotype_data(
-            mutations_transposed, phenotypes
-        )
+        timepoint_names = ("t0", "t1", transformation.__name__)
+        for time_name, mutation_sheet in zip(timepoint_names, transposed_sheets):
+            gene_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
+            pathway_sheet = coarse_grain_columns(gene_sheet, operation=np.sum)
+            gene_sheet.columns = gene_sheet.columns.to_series().apply(lambda x: x[1])
+            pathway_sheet.columns = pathway_sheet.columns.to_series().apply(
+                lambda x: x[0]
+            )
 
-        # Check that all patients are included.
-        assert final_spreadsheet.shape[0] == phenotypes.shape[0]
+            # Make a sheet for each level of coarseness.
+            for coarseness_name, coarse_sheet in {
+                "gene": gene_sheet,
+                "pathway": pathway_sheet,
+            }.items():
+                coarse_sheet = add_mutationless_patients(coarse_sheet, clinical_data)
+                # Merge with clinical data.
+                final_spreadsheet = merge_mutations_with_phenotype_data(
+                    coarse_sheet, clinical_data
+                )
 
-        # And store to disk.
-        data_frame_to_disk(
-            final_spreadsheet,
-            all_filename=all_filename_prefix + f"_{column}",
-            train_filename=train_filename_prefix + f"_{column}",
-            test_filename=test_filename_prefix + f"_{column}",
-        )
+                # Check that all patients are included.
+                assert final_spreadsheet.shape[0] == clinical_data.shape[0]
+
+                # And store to disk.
+                data_frame_to_disk(
+                    final_spreadsheet,
+                    all_filename=all_filename_prefix
+                    + f"_{coarseness_name}__{time_name}__{column}",
+                    train_filename=train_filename_prefix
+                    + f"_{coarseness_name}__{time_name}__{column}",
+                    test_filename=test_filename_prefix
+                    + f"_{coarseness_name}__{time_name}___{column}",
+                )
 
 
 def data_frame_to_disk(
@@ -324,10 +407,8 @@ def data_frame_to_disk(
     X_test.to_csv(test_filename + ".tsv", sep="\t")
 
 
-def clean_and_transpose_data_frame(
-    mutation_data_frame: pd.DataFrame,
-    columns_to_transform: list,
-    transformation: Callable,
+def clean_and_verify_data_frame(
+    mutation_data_frame: pd.DataFrame, columns_to_transform: list
 ) -> pd.DataFrame:
     """
     Clean up data frame records, verify consistency, and transpose to gene columns.
@@ -353,24 +434,13 @@ def clean_and_transpose_data_frame(
     # And that everything went in to the "dirty" records.
     assert dirty_patient_mutations[columns_to_transform].dropna().shape[0] == 0
 
-    # Vocabulary is the entire gene dataset.
-    gene_vocabulary = clean_patient_mutations["Gene"].unique()
-
-    # Perform `transformation` on the columns. That is, calculate change in DNA
-    # mutation.
-    patient_mutation_frequencies = patient_allele_frequencies(
-        clean_patient_mutations,
-        gene_vocabulary,
-        allele_columns=columns_to_transform,
-        transformation=transformation,
-    )
-    return patient_mutation_frequencies
+    return clean_patient_mutations
 
 
 def merge_mutations_with_phenotype_data(
     transposed_mutation_data_frame: pd.DataFrame, phenotype_data_frame: pd.DataFrame
 ) -> pd.DataFrame:
-    phenotypes_to_keep = phenotype_features + phenotype_labels
+    phenotypes_to_keep = clinical_features + phenotype_labels
     # Combine mutation data and phenotype data.
     X = pd.merge(
         left=transposed_mutation_data_frame,
@@ -382,36 +452,21 @@ def merge_mutations_with_phenotype_data(
     return X
 
 
-def survival_histograms(y, hist_bins: int = 10, cum_hist_bins: int = 15):
-    y_range = (0.0, 1.25 * max(y))
-    # Histogram of patients.
-    p, edges = np.histogram(y, range=y_range, bins=hist_bins)
-    t = (edges[:-1] + edges[1:]) / 2.0
-
-    # Cumulative histogram.
-    res = sp.stats.cumfreq(y, numbins=cum_hist_bins, defaultreallimits=(0.0, max(y)))
-    t_cum = res.lowerlimit + np.linspace(
-        0, res.binsize * res.cumcount.size, res.cumcount.size
-    )
-    n_survive = len(y) - res.cumcount
-
-    # Remove last element which contains 0 survivors.
-    t_cum = t_cum[:-1]
-    n_survive = n_survive[:-1]
-
-    return ((t, p), (t_cum, n_survive))
-
-
 def merge_mutation_spreadsheet_t0_with_t1(
     spread_sheet: pd.DataFrame, columns: List[str]
 ) -> pd.DataFrame:
     """
     The mutation spreadsheet contains rows for t0 and for t1. Merge these rows.
     """
+
+    def get_sample_number(sample_id: str):
+        tokens = str(sample_id).split("_")
+        if len(tokens) > 1:
+            return int(tokens[1])
+        return None
+
     # Determine whether it is t0 or t1 measurement.
-    spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(
-        lambda x: int(x.split("_")[1])
-    )
+    spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(get_sample_number)
     # Replace NA with empty string in order to join the rows using pandas.
     spread_sheet["Coding Change"] = (
         spread_sheet["Coding Change"].astype("string").fillna("")
@@ -471,10 +526,10 @@ def combine_tsv_files(
     assert set(X_train_a.index.unique()) == set(X_train_b.index.unique())
 
     # Remove phenotype columns to get the genetic columns.
-    genetic_columns_b = list(set(X_train_b.columns) - set(phenotype_features))
+    genetic_columns_b = list(set(X_train_b.columns) - set(clinical_features))
     genetic_columns_b.sort()
     # We want to rename only the genetic columns, not the phenotypes.
-    genetic_columns_a = list(set(X_train_a.columns) - set(phenotype_features))
+    genetic_columns_a = list(set(X_train_a.columns) - set(clinical_features))
     rename_table_a = {
         column_name: column_name + suffixes[0] for column_name in genetic_columns_a
     }
@@ -496,3 +551,40 @@ def combine_tsv_files(
     assert set(X_train.index.unique()) == set(y_train.index.unique())
 
     return X_train, y_train
+
+
+def generate_data_pairs(filename_prefix: str, snv_type: str) -> dict:
+    """
+    Combine SNV and CNV data for t0, t1, dt and harmonic mean in (X, y) pairs.
+    """
+    datasets = ["difference", "harmonic_mean", "t0", "t1"]
+    pos_label = "responder (pr+cr)"
+    named_pairs = {}
+    for data_type in datasets:
+        type_prefix = f"{filename_prefix}__{data_type}"
+        X, y = combine_tsv_files(
+            f"{type_prefix}__{snv_type}.tsv", f"{type_prefix}__CNV Score.tsv"
+        )
+        y = y["response_grouped"] == pos_label
+        named_pairs[data_type] = (X, y)
+    return named_pairs
+
+
+def generate_model_data_pairs(data_pairs: dict, model_parameters: dict) -> dict:
+    """
+    Combine data sets for different time points in (model, (X, y)) pairs.
+
+    See `generate_data_pairs`.
+    """
+    logistic_Freeman = pipeline_Freeman(LogisticRegression, **model_parameters)
+    logistic_Richard = pipeline_Richard(LogisticRegression, **model_parameters)
+    return {
+        "Clinical": (logistic_Richard, data_pairs["difference"]),
+        "Clinical +\n Genomic $t_0$": (logistic_Freeman, data_pairs["t0"]),
+        "Clinical +\n Genomic $t_1$": (logistic_Freeman, data_pairs["t1"]),
+        "Clinical +\n Genomic $\Delta t$": (logistic_Freeman, data_pairs["difference"]),
+        "Clinical +\n Genomic $h(t_0, t_1)$": (
+            logistic_Freeman,
+            data_pairs["harmonic_mean"],
+        ),
+    }

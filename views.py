@@ -1,19 +1,19 @@
 from copy import copy
-from typing import Iterable, Optional
+from typing import Dict, Iterable, Optional, Tuple
 
 import graphviz
 import matplotlib
 from matplotlib import pyplot as plt
-import numpy as np
 import pandas as pd
-import scipy as sp
+import numpy as np
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
 
-from fit import categorical_signal, fit_categorical_survival
+from transform import combine_tsv_files
 from models import SparseFeatureFilter
 from pipelines import (
     calculate_pass_through_column_names_Richard,
@@ -22,7 +22,7 @@ from pipelines import (
 )
 from utils import bootstrap
 
-matplotlib.rc("font", size=22)
+# matplotlib.rc("font", size=22)
 matplotlib.rc("lines", linewidth=4)
 matplotlib.rc("figure", autolayout=True)
 matplotlib.rc("ytick", labelsize="large")
@@ -134,79 +134,6 @@ def filter_outliers(array: Iterable, outlier_indices: list) -> np.array:
     return np.array([a for i, a in enumerate(array) if i not in outlier_indices])
 
 
-def view_as_exponential(
-    t, p, outlier_indices=[], markers=["o", "-"], text_location="above", label=""
-):
-    # Make a fit without outliers.
-    slope, intercept, r_value, p_value, std_err = sp.stats.linregress(
-        filter_outliers(t, outlier_indices), filter_outliers(np.log(p), outlier_indices)
-    )
-
-    tau = -1.0 / slope * np.log(2)
-
-    tau_text = r"$\tau={:.0f}$ days".format(tau)
-    R_text = "$R^2={:.2f}$".format(r_value ** 2)
-    fit_text = tau_text + ", " + R_text
-
-    p = plt.plot(t, np.log(p), markers[0], label=label)
-    ca = plt.gca()
-    xlim = np.array(ca.get_xlim())
-    plt.plot(
-        xlim,
-        slope * xlim + intercept,
-        markers[1],
-        label=fit_text,
-        color=p[0].get_color(),
-    )
-    # plt.xlim([-1, max(t) + 1])
-    plt.xlabel(r"$t$ (days)")
-    plt.ylabel(r"$\ln[n(t)]$")
-
-    # x_centre = (xlim[1] - xlim[0]) / 2.0
-    # y_centre = x_centre * slope + intercept
-    # text_loc = np.array([x_centre, y_centre])
-    # if text_location == "above":
-    #     text_loc *= 1.2
-    # elif text_location == "below":
-    #     text_loc * 0.8
-    # else:
-    #     text_loc = text_location
-
-    # ca.text(
-    #     text_loc[0],
-    #     text_loc[1],
-    #     fit_text,
-    #     ha="center",
-    #     va="center",
-    #     # transform=ca.transAxes,
-    #     fontsize="xx-large",
-    # )
-    # Location 3 is lower left corner.
-    plt.legend(frameon=False, loc=3)
-
-
-def categorical_signal_summary(
-    X: pd.DataFrame, y: pd.Series, categorical_columns: list
-) -> pd.DataFrame:
-    """
-    Make a summary of all categorical effects.
-    """
-    summary = pd.DataFrame()
-
-    for category in categorical_columns:
-        # Calculate survival statistics for given prior information.
-        df = fit_categorical_survival(X[category], y)
-        # Calculate signal.
-        s = categorical_signal(df)
-        # Add results to summary.
-        s["item"] = s.index
-        s["category"] = category
-        # Add results to summary.
-        summary = summary.append(s, ignore_index=True)
-
-    return summary.set_index(["category", "item"])
-
-
 def remove_parallel_coefficients(coeff_mean, coeff_std, names):
     """
     Remove coefficients that are (almost) equal but opposite in sign.
@@ -249,18 +176,11 @@ def dichomotise_parallel_coefficients(coeff_mean, coeff_std, names):
     return (coef_mean_a, coef_std_a, name_a), (coef_mean_b, coef_std_b, name_b)
 
 
-def remove_coefficients_below_thresshold(coeff_mean, coeff_std, names, thresshold=0.05):
+def remove_coefficients_below_thresshold(data_frame, thresshold=0.05):
     """
     Remove coefficients for which the magnitude |c_i| < thresshold.
     """
-    name_new, coef_mean_new, coef_std_new = [], [], []
-    for i, y_i in enumerate(coeff_mean):
-        if abs(y_i) > thresshold:
-            name_new.append(names[i])
-            coef_mean_new.append(y_i)
-            coef_std_new.append(coeff_std[i])
-
-    return coef_mean_new, coef_std_new, name_new
+    return data_frame.loc[abs(data_frame["mean"]) > thresshold]
 
 
 @bootstrap(k=5)
@@ -397,15 +317,17 @@ def merge_partitioned_coefficients(partition_a: tuple, partition_b: tuple):
     return (new_mean, new_std, np.array(tuple(new_names)))
 
 
-def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
+def view_linear_model_freeman(X, y, pipeline, top_n=10, filenames=None):
     """
     Infer the variable names and plot the coefficients.
     """
+    assert len(np.unique(y)) == 2
+
     # Calculate coefficients' mean and standard deviation of the bootstrapped model.
     bootstrapped_coefficients = fit_model_coefficients(X, y, pipeline)
     coeff_mean, coeff_std = bootstrapped_coefficients
 
-    # Generate variable names of the one hot encoded categorical data.
+    # Generate variable names from the one-hot-encoded categorical data.
     clinical_variable_names = reconstruct_categorical_variable_names(pipeline)
 
     # Concatenate with unaltered columns. The remaining variables are the genetic ones.
@@ -420,18 +342,8 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
     coeff_std_genetic = coeff_std[number_clinical_vars:]
 
     genetic_variable_names = passthrough_columns
-    # Single out numerical clinical variables from passthrough columns.
-    if "TNM-M_count" in passthrough_columns:
-        # The following variables we need to take care of:
-        assert passthrough_columns[-3:] == ["age", "TNM-N", "TNM-M_count"]
-        # Remove the variables from the genetic list.
-        genetic_variable_names = genetic_variable_names[:-3]
-        coeff_mean_genetic = coeff_mean_genetic[:-3]
-        coeff_std_genetic = coeff_std[:-3]
-        # Add the last variable to the clinical list.
-        clinical_variable_names.append("TNM-M_count")
-        coeff_mean_clinical = np.append(coeff_mean_clinical, coeff_mean[-1])
-        coeff_std_clinical = np.append(coeff_std_clinical, coeff_std[-1])
+
+    assert len(clinical_variable_names) + len(genetic_variable_names) == len(coeff_mean)
 
     # Make a plot for the clinical data.
     with sns.plotting_context(font_scale=1.5):
@@ -480,27 +392,78 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
                 plt.savefig("figs/{}.png".format(filenames[0]), bbox_inches="tight")
                 plt.savefig("figs/{}.eps".format(filenames[0]), bbox_inches="tight")
 
+        plot1_limits = plt.xlim()
+
     # And a seperate figure for the genetic data.
     with sns.plotting_context(font_scale=1.5):
-        # Remove very small coefficients.
-        coeff_mean_genetic, coeff_std_genetic, genetic_variable_names = remove_coefficients_below_thresshold(
-            coeff_mean_genetic,
-            coeff_std_genetic,
-            genetic_variable_names,
-            thresshold=thresshold,
+        coef_data_frame = pd.DataFrame(
+            {"mean": coeff_mean_genetic, "std": coeff_std_genetic},
+            index=genetic_variable_names,
         )
-        plt.figure(figsize=(8, 6))
-        plt.title("Genetic variables")
-        plt.xlabel(r"Slope $c_i$ ($\|c_i\| > {:.2f}$)".format(thresshold))
+
+        coef_data_frame["mean_magnitude"] = abs(coef_data_frame["mean"])
+        max_n = top_n
+        if top_n is None:
+            max_n = coeff_mean_genetic.shape[0] + 1
+
+        top_n_coef = coef_data_frame.sort_values(
+            by="mean_magnitude", ascending=False
+        ).iloc[:max_n]
+
+        # plt.figure(figsize=(6, 8))
+        plt.figure()
+        if coef_data_frame.shape[0] > max_n:
+            plt.title(f"Top-{max_n} genetic variables")
+        from matplotlib import rc
+
+        rc("text.latex", preamble=r"\usepackage{xcolor}")
+
+        def change_variant_label(label_input):
+            gene, variation = label_input.split("_")
+            if variation == "cnv":
+                gene_text = r"\bf{" + gene + "}"
+            else:
+                gene_text = gene
+            return r"$\mathrm{" + gene_text + r"_{" + variation + r"}}$"
+
+        top_n_coef["labels"] = top_n_coef.index.to_series().apply(change_variant_label)
+        c0, c1 = sns.color_palette()[:2]
         sns.barplot(
-            x=coeff_mean_genetic,
-            xerr=coeff_std_genetic,
-            y=genetic_variable_names,
+            x=top_n_coef["mean"],
+            xerr=top_n_coef["std"],
+            y=top_n_coef["labels"],
+            palette=top_n_coef["labels"].apply(lambda x: c0 if "cnv" in x else c1),
             label="large",
+            color="gray",
         )
+        # plt.ylabel("Gene")
+        plt.xlabel(r"Slope $c_i$ (-)")
+        plt.xlim(plot1_limits)
         plt.tight_layout()
-        plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")
-        plt.savefig("figs/{}.eps".format(filenames[1]), bbox_inches="tight")
+        if filenames:
+            plt.savefig("figs/{}.png".format(filenames[1]), bbox_inches="tight")
+            plt.savefig("figs/{}.eps".format(filenames[1]), bbox_inches="tight")
+
+
+def compare_prognostic_value_genomic_information(
+    feature_label_pairs: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]], plot_label=None
+):
+    """
+    feature_label_pairs: Pairs of (model, (X, y)) to make a comparison.
+    """
+    results = pd.DataFrame(index=feature_label_pairs.keys(), columns=["mean", "std"])
+    for label, (model, (X, y)) in feature_label_pairs.items():
+        scores = cross_val_score(model, X, y, scoring="roc_auc", cv=5)
+        results.loc[label, "mean"] = np.mean(scores)
+        results.loc[label, "std"] = np.std(scores)
+    plt.errorbar(
+        x=results.index, y=results["mean"], yerr=results["std"], label=plot_label
+    )
+    degrees = 90
+    plt.xticks(rotation=degrees)
+    plt.ylim([0.5, 1.0])
+    plt.ylabel("AUC ROC")
+    plt.legend(frameon=False)
 
 
 # from sklearn.linear_model import LogisticRegression
@@ -512,7 +475,35 @@ def view_linear_model_freeman(X, y, pipeline, thresshold, filenames=None):
 #     "output/train__harmonic_mean__Allele Fraction.tsv",
 #     "output/train__harmonic_mean__CNV Score.tsv",
 # )
-# y_train_resp = y_train_hm["response_grouped"]
+# pos_label = 'responder (pr+cr)'
+# y_train_resp = y_train_hm["response_grouped"]  == pos_label
 # parameters = {"solver": "newton-cg"}
 # logistic_Freeman = pipeline_Freeman(LogisticRegression, **parameters)
 # view_linear_model_freeman(X_train_hm, y_train_resp, logistic_Freeman, thresshold=0.05)
+
+# from sklearn.linear_model import LogisticRegression
+# from transform import combine_tsv_files
+# from pipelines import (
+#     benchmark_pipelines,
+#     build_classifier_pipelines,
+#     pipeline_Freeman,
+#     pipeline_Richard,
+# )
+
+
+# parameters = {
+#     "C": 0.1,
+#     "class_weight": "balanced",
+#     "solver": "newton-cg",
+# }
+# mutant_data_pairs = generate_data_pairs(
+#     filename_prefix="output/train", snv_type="No. Mutant Molecules per mL"
+# )
+# vaf_data_pairs = generate_data_pairs(
+#     filename_prefix="output/train", snv_type="Allele Fraction"
+# )
+# model_mutant_data_pairs = generate_model_data_pairs(mutant_data_pairs, parameters)
+# model_vaf_data_pairs = generate_model_data_pairs(vaf_data_pairs, parameters)
+# compare_prognostic_value_genomic_information(model_mutant_data_pairs, plot_label="Mutant concentration")
+# compare_prognostic_value_genomic_information(model_vaf_data_pairs, plot_label='Allele fraction')
+# plt.savefig('figs/comparison_genomic_data.png', bbox_inches="tight")

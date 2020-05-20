@@ -13,7 +13,7 @@ from transform import (
     clean_mutation_columns,
     load_process_and_store_spreadsheets,
     get_top_correlated,
-    patient_allele_frequencies,
+    transform_column_pair,
 )
 
 
@@ -67,32 +67,32 @@ class TestTransforms(unittest.TestCase):
         """
         # Too many columns passed to `allele_freq_columns`.
         with self.assertRaises(ValueError):
-            patient_allele_frequencies(
+            transform_column_pair(
                 self.mutations,
                 gene_vocabulary=self.all_genes,
-                allele_columns=["a", "b", "c"],
+                column_pair=["a", "b", "c"],
             )
 
         # Fail when passing non-existing colums.
         with self.assertRaises(KeyError):
-            patient_allele_frequencies(
+            transform_column_pair(
                 self.mutations,
                 gene_vocabulary=self.all_genes,
-                allele_columns=["lorem", "ipsum"],
+                column_pair=["lorem", "ipsum"],
             )
 
         # Fail when some of the columns contain NA values.
         with self.assertRaises(ValueError):
             mutation_copy = self.mutations.copy()
             mutation_copy.iloc[0, 0] = None
-            patient_allele_frequencies(mutation_copy, gene_vocabulary=self.all_genes)
+            transform_column_pair(mutation_copy, gene_vocabulary=self.all_genes)
 
     def test_patient_allele_frequencies_values(self):
         """
         Check that `patient_allele_frequencies` stores the correct values in the
         correct column.
         """
-        df_freq = patient_allele_frequencies(self.mutations, self.all_genes)
+        df_freq = transform_column_pair(self.mutations, self.all_genes)
 
         reference_mutation_names = ["a", "b", "c"]
         # First patient has two mutations.
@@ -114,19 +114,19 @@ class TestTransforms(unittest.TestCase):
         `patient_allele_frequencies`.
         """
         # Check that first element is selected when handle_duplicates="ignore".
-        df_freq = patient_allele_frequencies(
+        df_freq = transform_column_pair(
             self.mutations, self.all_genes, handle_duplicates="ignore"
         )
         self.assertEqual(df_freq.loc[3, "a"], -0.05)
 
         # Check that largest value is selected when handle_duplicates="max".
-        df_freq = patient_allele_frequencies(
+        df_freq = transform_column_pair(
             self.mutations, self.all_genes, handle_duplicates="max"
         )
         self.assertEqual(df_freq.loc[3, "a"], 0.49)
 
         # Check that smallest value is selected when handle_duplicates="min".
-        df_freq = patient_allele_frequencies(
+        df_freq = transform_column_pair(
             self.mutations, self.all_genes, handle_duplicates="min"
         )
         self.assertEqual(df_freq.loc[3, "a"], -0.49)
@@ -136,7 +136,7 @@ class TestTransforms(unittest.TestCase):
         Test the `get_top_correlated` function.
         """
         # First calculate frequencies and corresponding correlations.
-        df_freq = patient_allele_frequencies(self.mutations, self.all_genes)
+        df_freq = transform_column_pair(self.mutations, self.all_genes)
         correlations = df_freq.corr()
         top_df = get_top_correlated(
             correlations,

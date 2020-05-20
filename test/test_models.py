@@ -6,6 +6,7 @@ import pandas as pd
 from sklearn.tree import DecisionTreeClassifier
 
 from models import (
+    AutoMaxScaler,
     AggregateColumns,
     ClassifierAsTransformer,
     Gene2Vec,
@@ -267,3 +268,52 @@ class TestAggregateColumns(unittest.TestCase):
         np.testing.assert_array_equal(X["c"], X_prime["c"])
         # And that the other column is indeed the average.
         np.testing.assert_array_equal(X[["a", "b"]].mean(axis=1), X_prime["mean"])
+
+
+class TestAutoMaxScaler(unittest.TestCase):
+    """
+    Test transformations of AutoMaxScaler.
+    """
+
+    def test_pickup_columns(self):
+        """
+        Test that the columns are correctly picked up.
+        """
+        X = pd.DataFrame(
+            {
+                "a": np.arange(7),
+                "b": ["0", "1", "0", "1", "0", "1", "2"],
+                "c": np.arange(7) * 2,
+                # Sparse result, is also not a category.
+                "d": np.array([-2.0, 1.5, 0.0, 0.0, 0.0, 0.5, 1.5]),
+            }
+        )
+        scaler = AutoMaxScaler(uniqueness_thresshold=0.7).fit(X)
+        self.assertEqual(scaler.columns_to_transform_, ["a", "c", "d"])
+
+        # Test ignoring columns.
+        scaler = AutoMaxScaler(uniqueness_thresshold=0.7, ignore_columns=["a"]).fit(X)
+        self.assertEqual(scaler.columns_to_transform_, ["c", "d"])
+
+    def test_scaling(self):
+        """
+        Test which and how columns are scaled.
+        """
+        X = pd.DataFrame(
+            {
+                "a": np.arange(4.0),
+                "b": ["0", "1", "0", "1"],
+                "c": np.arange(4.0) * 2,
+                "d": np.array([-2.0, 0.0, 0.0, 1.5]),
+            }
+        )
+        X_groundtruth = pd.DataFrame(
+            {
+                "a": np.arange(4.0) / 3.0,
+                "b": ["0", "1", "0", "1"],
+                "c": np.arange(4.0) / 3.0,
+                "d": np.array([-2.0, 0.0, 0.0, 1.5]) / 2.0,
+            }
+        )
+        X_scaled = AutoMaxScaler().fit_transform(X)
+        pd.testing.assert_frame_equal(X_scaled, X_groundtruth)

@@ -1,21 +1,49 @@
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 
 from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.pipeline import Pipeline
 
 
-def get_categorical_columns(data_frame: pd.DataFrame) -> list:
+def get_categorical_columns(
+    data_frame: pd.DataFrame, uniqueness_thresshold: Optional[float] = None
+) -> list:
     """
-    Convert all text columns to lower case.
+    Find all non-numeric columns.
+
+    Args:
+        data_frame (pd.DataFrame): Analyse columns from this data frame.
+        uniqueness_thresshold (float): If less than this fraction of the values are
+            unique, than consider the column categorical.
     """
     categorical_columns = []
     for column in data_frame.columns:
+        values = data_frame[column]
+
+        if values.dtype.name == "category":
+            categorical_columns.append(column)
+            continue
+
         # This is a dirty way to check if it is non-numeric, but pandas thinks
         # all the columns are strings.
         try:
-            float(data_frame[column].iloc[0])
+            float(values.iloc[0])
         except ValueError:
             categorical_columns.append(column)
+            continue
+
+        # If it is numeric, but lots of non-zero values are identical, consider it
+        # categorical.
+        if uniqueness_thresshold is not None:
+            # Correct for sparseness, by ignoring zero values.
+            if 0 in values.unique() and values.nunique() > 1:
+                non_sparse_counts = len(values) - values.value_counts()[0]
+                if (values.nunique() - 1) / non_sparse_counts <= uniqueness_thresshold:
+                    categorical_columns.append(column)
+            elif values.nunique() / len(values) <= uniqueness_thresshold:
+                categorical_columns.append(column)
 
     return categorical_columns
 
@@ -77,3 +105,10 @@ def bootstrap(k):
         return bootstrap_k_fold
 
     return wrap_k_fold
+
+
+def get_sub_pipeline(pipeline, step: int):
+    """
+    Get part of the pipeline upto and including `step`.
+    """
+    return Pipeline(pipeline.steps[:step])

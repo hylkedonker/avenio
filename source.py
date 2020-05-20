@@ -14,11 +14,10 @@ np.random.seed(RANDOM_STATE)
 phenotype_labels = [
     "Clinical_Response",
     "response_grouped",
-    "progressie",
-    "PFS_days",
-    "OS_days",
     "OS_months",
     "PFS_months",
+    "Censor_OS",
+    "Censor_progression",
 ]
 
 
@@ -79,11 +78,18 @@ def load_avenio_files(
 
 
 def add_mutationless_patients(
-    mutation_table: pd.DataFrame, mutationless_patients: np.ndarray
+    mutation_table: pd.DataFrame, clinical_sheet: np.ndarray
 ) -> pd.DataFrame:
     """
     Add mutationless patients to the mutation table by filling the rows with zeros.
     """
+    # Add the patients that are not in the mutation list.
+    mutationless_patients = set(clinical_sheet["studynumber"]) - set(
+        mutation_table.index
+    )
+    # Make the difference set ordered using `tuple`, and then convert to a Series.
+    mutationless_patients = pd.Series(tuple(mutationless_patients))
+
     no_mutations = pd.DataFrame(
         # Create table of zeros.
         np.zeros([mutationless_patients.shape[0], mutation_table.shape[1]]),
