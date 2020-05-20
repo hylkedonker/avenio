@@ -468,9 +468,7 @@ def merge_mutation_spreadsheet_t0_with_t1(
     # Determine whether it is t0 or t1 measurement.
     spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(get_sample_number)
     # Replace NA with empty string in order to join the rows using pandas.
-    spread_sheet["Coding Change"] = (
-        spread_sheet["Coding Change"].astype("string").fillna("")
-    )
+    spread_sheet["Coding Change"] = spread_sheet["Coding Change"].astype(str).fillna("")
 
     # This triplet uniquely defines a record.
     join_columns = ["Patient ID", "Gene", "Coding Change"]

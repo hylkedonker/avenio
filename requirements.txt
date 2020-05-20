@@ -1,7 +1,9 @@
 graphviz
+html5lib
 ipdb
 matplotlib
-openpyxl
+openpyxl==3.0.1
+runipy==0.1.5
 lxml
 bs4
 pandas
