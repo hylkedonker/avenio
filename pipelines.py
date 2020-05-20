@@ -20,7 +20,7 @@ from sklearn.linear_model import (
     ElasticNet,
     LinearRegression,
 )
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import cross_val_score, KFold
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
@@ -33,11 +33,7 @@ import numpy as np
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import clinical_features
-from models import (
-    AggregateColumns,
-    AutoMaxScaler,
-    SparseFeatureFilter,
-)
+from models import AggregateColumns, AutoMaxScaler, SparseFeatureFilter
 
 
 RANDOM_STATE = 1234
@@ -197,8 +193,8 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
 
     # All clinical variables are categories.
     new_clinical_features = clinical_features.copy()
-    new_clinical_features[new_clinical_features.index('Age')] = 'age'
-    X_prime[new_clinical_features] = X_prime[new_clinical_features].astype('category')
+    new_clinical_features[new_clinical_features.index("Age")] = "age"
+    X_prime[new_clinical_features] = X_prime[new_clinical_features].astype("category")
     return X_prime
 
 
@@ -235,7 +231,7 @@ def clinical_encoder_step():
     )
 
 
-def pipeline_Richard(Estimator, **kwargs):
+def pipeline_Richard(estimator):
     """
     Phenotype-only pipeline Richard.
     """
@@ -246,13 +242,13 @@ def pipeline_Richard(Estimator, **kwargs):
         ),
         *clinical_preprocessing_steps(),
         ("encode_clinical_categories", clinical_encoder_step()),
-        ("estimator", Estimator(**kwargs)),
+        ("estimator", estimator),
     ]
 
     return Pipeline(steps=steps_Richard)
 
 
-def pipeline_Julian(Estimator, **kwargs):
+def pipeline_Julian(estimator):
     """
     Mutation-only pipeline Julian.
     """
@@ -263,13 +259,13 @@ def pipeline_Julian(Estimator, **kwargs):
                 FunctionTransformer(select_no_phenotype_columns, validate=False),
             ),
             ("filter_rare_mutations", SparseFeatureFilter(top_k_features=6)),
-            ("estimator", Estimator(**kwargs)),
+            ("estimator", estimator),
         ]
     )
     return p_Julian
 
 
-def pipeline_Freeman(Estimator, **kwargs):
+def pipeline_Freeman(estimator):
     """
     Pipeline with clinical + genomic data: Freeman.
     """
@@ -277,62 +273,22 @@ def pipeline_Freeman(Estimator, **kwargs):
         *clinical_preprocessing_steps(),
         ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
         ("encode_clinical_categories", clinical_encoder_step()),
-        ("estimator", Estimator(**kwargs)),
+        ("estimator", estimator),
     ]
 
     return Pipeline(steps=steps_Freeman)
 
 
-def hybrid_regressor(random_state: int = 1234) -> BaseEstimator:
-    net_kwargs = {
-        "random_state": random_state,
-        "l1_ratio": 0.75,
-        "alpha": 1.0,
-        "max_iter": 1000,
-    }
-    tree_kwargs = {"random_state": random_state, "max_depth": 4}
-    return VotingRegressor(
-        estimators=[
-            ("phenotype", pipeline_Richard(ElasticNet, **net_kwargs)),
-            ("genetics", pipeline_Julian(DecisionTreeRegressor, **tree_kwargs)),
-        ]
-    )
-
-
-def hybrid_classifier(random_state: int = 1234) -> BaseEstimator:
-    log_kwargs = {
-        "random_state": random_state,
-        "penalty": "elasticnet",
-        "class_weight": "balanced",
-        "solver": "saga",
-        "l1_ratio": 0.75,
-        "C": 0.5,
-    }
-    tree_kwargs = {
-        "criterion": "gini",
-        "random_state": random_state,
-        "max_depth": 5,
-        "class_weight": "balanced",
-    }
-
-    return VotingClassifier(
-        estimators=[
-            ("phenotype", pipeline_Richard(LogisticRegression, **log_kwargs)),
-            ("genetics", pipeline_Julian(DecisionTreeClassifier, **tree_kwargs)),
-        ]
-    )
-
-
-def pipelines(Estimator, VotingEstimator=VotingClassifier, **kwargs) -> dict:
+def pipelines(estimator) -> dict:
     """
     Generate pipelines for a given classifier.
     """
     d = {
-        "Richard": pipeline_Richard(Estimator, **kwargs),
-        "Julian": pipeline_Julian(Estimator, **kwargs),
-        "Freeman": pipeline_Freeman(Estimator, **kwargs),
-        # "Nikolay": pipeline_Nikolay(Estimator, **kwargs),
-        # "Pyotr": pipeline_Pyotr(Estimator, **kwargs),
+        "Richard": pipeline_Richard(estimator),
+        "Julian": pipeline_Julian(estimator),
+        "Freeman": pipeline_Freeman(estimator),
+        # "Nikolay": pipeline_Nikolay(estimator),
+        # "Pyotr": pipeline_Pyotr(estimator),
     }
 
     return d
@@ -364,9 +320,7 @@ def build_regression_pipelines(random_state: int = 1234) -> dict:
         DummyRegressor: {"strategy": "median"},
     }
     return {
-        str(Regressor.__name__): pipelines(
-            Regressor, VotingEstimator=VotingRegressor, **kwargs
-        )
+        str(Regressor.__name__): pipelines(estimator=Regressor(**kwargs))
         for Regressor, kwargs in regressors.items()
     }
 
@@ -385,30 +339,23 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
         },
         RandomForestClassifier: {
             "random_state": random_state,
-            "n_estimators": 15,
+            "n_estimators": 30,
             "max_depth": 5,
             "class_weight": "balanced_subsample",
         },
         GaussianNB: {},
-        GradientBoostingClassifier: {"random_state": random_state, "n_estimators": 15},
-        KNeighborsClassifier: {"n_neighbors": 2, "weights": "distance"},
+        GradientBoostingClassifier: {"random_state": random_state, "n_estimators": 125},
+        KNeighborsClassifier: {
+            "n_neighbors": 4,
+            # "weights": "distance"
+        },
         LogisticRegression: {
             "random_state": random_state,
-            # Choose l2 norm in combination with newton conjugate gradient solver for
-            # converging results (elasticnet is slightly better, but not always
-            # converges correctly).
             "solver": "newton-cg",
             "penalty": "l2",
-            # ####### FOR ELASTIC NET#####
-            # "solver": "saga",
-            # "penalty": "elasticnet",
-            # "l1_ratio": 0.025,
-            # ############################
             "class_weight": "balanced",
             "multi_class": "auto",
-            # Make an unbiased model.
-            "fit_intercept": False,
-            "C": 1.0,
+            "C": 0.025,
             "max_iter": 5000,
         },
         SVC: {
@@ -416,23 +363,18 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "kernel": "rbf",
             "probability": True,
             "gamma": "scale",
+            "C": 1.0,
         },
-        # CatBoostClassifier: {"random_seed": random_state},
         DummyClassifier: {"strategy": "most_frequent", "random_state": random_state},
     }
     return {
-        str(Classifier.__name__): pipelines(
-            Classifier,
-            # VotingEstimator=VotingClassifier,
-            VotingEstimator=None,
-            **kwargs,
-        )
+        str(Classifier.__name__): pipelines(estimator=Classifier(**kwargs))
         for Classifier, kwargs in classifiers.items()
     }
 
 
 def benchmark_pipelines(
-    pipelines: dict, X: pd.DataFrame, y: pd.Series, metric: Callable = accuracy_score
+    pipelines: dict, X: pd.DataFrame, y: pd.Series, metric: Callable = roc_auc_score
 ) -> pd.DataFrame:
     """
     Make a benchmark of classifier versus preprocessing architecture.
@@ -449,6 +391,33 @@ def benchmark_pipelines(
             classifier_scores[f"{pipeline_name} std"] = np.std(k_fold_scores)
 
     return pd.DataFrame(benchmark_result).T
+
+
+def test_scores_pipelines(
+    pipelines: dict,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    metric: Callable = roc_auc_score,
+):
+    """
+    Calculate test scores for each pipeline.
+    """
+    if metric == "roc_auc":
+        metric = roc_auc_score
+
+    test_result = {}
+    # Each classifier is associated with a set of pipelines.
+    for classifier_name, classifier_pipelines in pipelines.items():
+        classifier_scores = {}
+        test_result[classifier_name] = classifier_scores
+        # Benchmark all pipeline configurations with this classifier.
+        for pipeline_name, p in classifier_pipelines.items():
+            p.fit(X_train, y_train)
+            classifier_scores[f"{pipeline_name}"] = metric(y_test, p.predict(X_test))
+
+    return pd.DataFrame(test_result).T
 
 
 def calculate_pass_through_column_names_Richard(pipeline):

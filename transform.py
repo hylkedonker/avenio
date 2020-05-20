@@ -383,7 +383,7 @@ def load_process_and_store_spreadsheets(
                     train_filename=train_filename_prefix
                     + f"_{coarseness_name}__{time_name}__{column}",
                     test_filename=test_filename_prefix
-                    + f"_{coarseness_name}__{time_name}___{column}",
+                    + f"_{coarseness_name}__{time_name}__{column}",
                 )
 
 
@@ -555,7 +555,14 @@ def generate_data_pairs(filename_prefix: str, snv_type: str) -> dict:
     """
     Combine SNV and CNV data for t0, t1, dt and harmonic mean in (X, y) pairs.
     """
-    datasets = ["difference", "harmonic_mean", "t0", "t1"]
+    datasets = [
+        "difference",
+        "harmonic_mean",
+        "relative_difference",
+        "up_or_down",
+        "t0",
+        "t1",
+    ]
     pos_label = "responder (pr+cr)"
     named_pairs = {}
     for data_type in datasets:
@@ -574,15 +581,17 @@ def generate_model_data_pairs(data_pairs: dict, model_parameters: dict) -> dict:
 
     See `generate_data_pairs`.
     """
-    logistic_Freeman = pipeline_Freeman(LogisticRegression, **model_parameters)
-    logistic_Richard = pipeline_Richard(LogisticRegression, **model_parameters)
+    logistic_Freeman = pipeline_Freeman(LogisticRegression(**model_parameters))
+    logistic_Richard = pipeline_Richard(LogisticRegression(**model_parameters))
     return {
         "Clinical": (logistic_Richard, data_pairs["difference"]),
         "Clinical +\n Genomic $t_0$": (logistic_Freeman, data_pairs["t0"]),
         "Clinical +\n Genomic $t_1$": (logistic_Freeman, data_pairs["t1"]),
         "Clinical +\n Genomic $\Delta t$": (logistic_Freeman, data_pairs["difference"]),
-        "Clinical +\n Genomic $h(t_0, t_1)$": (
+        "Clinical +\n Genomic $f$": (
             logistic_Freeman,
-            data_pairs["harmonic_mean"],
+            data_pairs["relative_difference"],
         ),
+        "Clinical +\n Genomic $h$": (logistic_Freeman, data_pairs["harmonic_mean"]),
+        "Clinical +\n Genomic $\iota$": (logistic_Freeman, data_pairs["up_or_down"]),
     }

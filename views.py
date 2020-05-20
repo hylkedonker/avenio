@@ -345,10 +345,6 @@ def view_linear_model_freeman(X, y, pipeline, top_n=10, filenames=None):
 
     assert len(clinical_variable_names) + len(genetic_variable_names) == len(coeff_mean)
 
-    import ipdb
-
-    ipdb.set_trace()
-
     # Make a plot for the clinical data.
     with sns.plotting_context(font_scale=1.5):
         coef_partitions = dichomotise_parallel_coefficients(
