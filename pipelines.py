@@ -286,44 +286,13 @@ def pipelines(estimator) -> dict:
     """
     d = {
         "Richard": pipeline_Richard(estimator),
-        "Julian": pipeline_Julian(estimator),
+        # "Julian": pipeline_Julian(estimator),
         "Freeman": pipeline_Freeman(estimator),
         # "Nikolay": pipeline_Nikolay(estimator),
         # "Pyotr": pipeline_Pyotr(estimator),
     }
 
     return d
-
-
-def build_regression_pipelines(random_state: int = 1234) -> dict:
-    """
-    Build a regression pipelines using a variety
-    """
-    regressors = {
-        DecisionTreeRegressor: {"random_state": random_state, "max_depth": 4},
-        RandomForestRegressor: {
-            "random_state": random_state,
-            "max_depth": 4,
-            "n_estimators": 10,
-        },
-        GradientBoostingRegressor: {"random_state": random_state, "n_estimators": 15},
-        KNeighborsRegressor: {"n_neighbors": 5},
-        ElasticNet: {
-            "random_state": random_state,
-            "l1_ratio": 0.75,
-            "alpha": 2,
-            "max_iter": 1000,
-        },
-        LinearRegression: {},
-        ARDRegression: {},
-        BayesianRidge: {},
-        SVR: {"kernel": "rbf", "gamma": "scale"},
-        DummyRegressor: {"strategy": "median"},
-    }
-    return {
-        str(Regressor.__name__): pipelines(estimator=Regressor(**kwargs))
-        for Regressor, kwargs in regressors.items()
-    }
 
 
 def get_classifier_init_params(Classifier, random_state: int = 1234) -> dict:
@@ -364,8 +333,8 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     classifiers = [
         DecisionTreeClassifier,
         RandomForestClassifier,
-        GaussianNB,
         GradientBoostingClassifier,
+        GaussianNB,
         KNeighborsClassifier,
         LogisticRegression,
         SVC,
@@ -373,7 +342,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     ]
     return {
         str(Classifier.__name__): pipelines(
-            estimator=Classifier(get_classifier_init_params(Classifier))
+            estimator=Classifier(**get_classifier_init_params(Classifier))
         )
         for Classifier in classifiers
     }
