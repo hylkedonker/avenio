@@ -1,3 +1,4 @@
+from pprint import pprint
 from typing import Callable
 
 import pandas as pd
@@ -331,14 +332,14 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     For a variety of classifier, create a set of pipelines.
     """
     classifiers = [
+        DummyClassifier,
+        LogisticRegression,
         DecisionTreeClassifier,
         RandomForestClassifier,
         GradientBoostingClassifier,
         GaussianNB,
         KNeighborsClassifier,
-        LogisticRegression,
         SVC,
-        DummyClassifier,
     ]
     return {
         str(Classifier.__name__): pipelines(
@@ -385,17 +386,17 @@ def get_hyper_param_grid(model) -> dict:
         }
     elif isinstance(model, RandomForestClassifier):
         return {
-            f"{prefix}n_estimators": [15, 30, 50, 100, 125],
-            f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20, None],
+            f"{prefix}n_estimators": [15, 30, 50, 100],
+            f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
             f"{prefix}class_weight": ["balanced", "balanced_subsample"],
             f"{prefix}min_samples_split": [2, 3, 5],
             f"{prefix}min_samples_leaf": [1, 2, 3, 5],
         }
     elif isinstance(model, GradientBoostingClassifier):
         return {
-            f"{prefix}n_estimators": [15, 30, 50, 100, 125],
-            f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2, 0.4],
-            f"{prefix}max_depth": [2, 3, 5, 7, 10],
+            f"{prefix}n_estimators": [15, 30, 50, 100],
+            f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
+            f"{prefix}max_depth": [2, 3, 5, 7],
             f"{prefix}min_samples_split": [2, 3, 5],
             f"{prefix}min_samples_leaf": [1, 2, 3, 5],
         }
@@ -421,13 +422,16 @@ def nested_cross_validate_score(
     metric: Callable = roc_auc_score,
     n_inner=5,
     n_outer=5,
-    hyper_parameters: dict = {},
+    verbose=True,
     random_state: int = 1234,
 ):
     """
     Calculate double loop (stratified) cross-validated score for `pipeline`.
     """
-    hyper_parameters.update(get_hyper_param_grid(pipeline))
+    print("--" * 10)
+    print(pipeline.named_steps["estimator"], ":")
+    print("params:", get_hyper_param_grid(pipeline))
+    print()
     inner_loop = StratifiedKFold(
         n_splits=n_inner, shuffle=True, random_state=random_state
     )
@@ -435,7 +439,11 @@ def nested_cross_validate_score(
         n_splits=n_outer, shuffle=True, random_state=random_state
     )
     clf = GridSearchCV(
-        estimator=pipeline, param_grid=hyper_parameters, cv=inner_loop, n_jobs=-1
+        estimator=pipeline,
+        param_grid=get_hyper_param_grid(pipeline),
+        cv=inner_loop,
+        n_jobs=-1,
+        verbose=3 * int(verbose),
     )
     nested_score = cross_val_score(clf, X, y, cv=outer_loop, scoring=metric)
     return nested_score
@@ -458,7 +466,9 @@ def benchmark_pipelines(
         benchmark_result[classifier_name] = classifier_scores
         # Benchmark all pipeline configurations with this classifier.
         for pipeline_name, p in classifier_pipelines.items():
-            scores = nested_cross_validate_score(p, X, y, metric=metric)
+            scores = nested_cross_validate_score(
+                p, X, y, metric=metric, verbose=verbose
+            )
             classifier_scores[f"{pipeline_name} mean"] = mean(scores)
             classifier_scores[f"{pipeline_name} std"] = std(scores)
             if verbose:

@@ -205,7 +205,7 @@ def fit_estimator_coefficients(X_train, y_train, X_test, y_test, pipeline):
 
     hyper_parameters = get_hyper_param_grid(estimator)
     inner_loop = StratifiedKFold(n_splits=5, shuffle=True, random_state=1234)
-    clf = GridSearchCV(estimator, param_grid=hyper_parameters, cv=inner_loop, n_jobs=-1)
+    clf = GridSearchCV(estimator, param_grid=hyper_parameters, cv=inner_loop, n_jobs=4)
     clf.fit(X_train_transf, y_train)
 
     return clf.best_estimator_.coef_.flatten()
