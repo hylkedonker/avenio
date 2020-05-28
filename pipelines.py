@@ -415,7 +415,7 @@ def nested_cross_validate_score(
             {
                 "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20],
                 "estimator__criterion": ["gini", "entropy"],
-                "estimator__min_samples_split": [1, 2, 3, 5],
+                "estimator__min_samples_split": [2, 3, 5],
                 "estimator__min_samples_leaf": [1, 2, 3, 5],
             }
         )
@@ -423,9 +423,9 @@ def nested_cross_validate_score(
         hyper_parameters.update(
             {
                 "estimator__n_estimators": [15, 30, 50, 100, 125],
-                "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20, "none"],
+                "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20, None],
                 "estimator__class_weight": ["balanced", "balanced_subsample"],
-                "estimator__min_samples_split": [1, 2, 3, 5],
+                "estimator__min_samples_split": [2, 3, 5],
                 "estimator__min_samples_leaf": [1, 2, 3, 5],
             }
         )
@@ -435,7 +435,7 @@ def nested_cross_validate_score(
                 "estimator__n_estimators": [15, 30, 50, 100, 125],
                 "estimator__learning_rate": [0.025, 0.05, 0.1, 0.2, 0.4],
                 "estimator__max_depth": [2, 3, 5, 7, 10],
-                "estimator__min_samples_split": [1, 2, 3, 5],
+                "estimator__min_samples_split": [2, 3, 5],
                 "estimator__min_samples_leaf": [1, 2, 3, 5],
             }
         )
@@ -489,7 +489,9 @@ def benchmark_pipelines(
             classifier_scores[f"{pipeline_name} mean"] = mean(scores)
             classifier_scores[f"{pipeline_name} std"] = std(scores)
             if verbose:
-                print(f"{classifier_name}: {mean(scores)}+/{std(scores)}")
+                print(
+                    f"{pipeline_name}({classifier_name}): {mean(scores)}+/{std(scores)}"
+                )
 
     return pd.DataFrame(benchmark_result).T
 
