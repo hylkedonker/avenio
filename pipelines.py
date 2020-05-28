@@ -348,6 +348,72 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     }
 
 
+def get_hyper_param_grid(model) -> dict:
+    """
+    Get parameter grid for hyper parameter tuning.
+    """
+    prefix = ""
+    if isinstance(model, Pipeline):
+        prefix = "estimator__"
+        model = model.named_steps["estimator"]
+
+    if isinstance(model, LogisticRegression):
+        return {
+            f"{prefix}C": [
+                0.005,
+                0.01,
+                0.025,
+                0.05,
+                0.075,
+                0.1,
+                0.175,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.5,
+                2.0,
+                4.0,
+            ]
+        }
+    elif isinstance(model, DecisionTreeClassifier):
+        return {
+            f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20],
+            f"{prefix}criterion": ["gini", "entropy"],
+            f"{prefix}min_samples_split": [2, 3, 5],
+            f"{prefix}min_samples_leaf": [1, 2, 3, 5],
+        }
+    elif isinstance(model, RandomForestClassifier):
+        return {
+            f"{prefix}n_estimators": [15, 30, 50, 100, 125],
+            f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20, None],
+            f"{prefix}class_weight": ["balanced", "balanced_subsample"],
+            f"{prefix}min_samples_split": [2, 3, 5],
+            f"{prefix}min_samples_leaf": [1, 2, 3, 5],
+        }
+    elif isinstance(model, GradientBoostingClassifier):
+        return {
+            f"{prefix}n_estimators": [15, 30, 50, 100, 125],
+            f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2, 0.4],
+            f"{prefix}max_depth": [2, 3, 5, 7, 10],
+            f"{prefix}min_samples_split": [2, 3, 5],
+            f"{prefix}min_samples_leaf": [1, 2, 3, 5],
+        }
+    elif isinstance(model, KNeighborsClassifier):
+        return {
+            f"{prefix}n_neighbors": [2, 3, 4, 6, 8, 12, 20],
+            f"{prefix}weights": ["uniform", "distance"],
+            f"{prefix}p": [1, 2, 3],
+        }
+    elif isinstance(model, SVC):
+        return {
+            f"{prefix}C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
+            f"{prefix}kernel": ["linear", "poly", "rbf", "sigmoid"],
+            f"{prefix}gamma": ["auto", "scale"],
+        }
+    return {}
+
+
 def nested_cross_validate_score(
     pipeline,
     X: pd.DataFrame,
@@ -361,73 +427,7 @@ def nested_cross_validate_score(
     """
     Calculate double loop (stratified) cross-validated score for `pipeline`.
     """
-    model = pipeline.named_steps["estimator"]
-    if isinstance(model, LogisticRegression):
-        hyper_parameters.update(
-            {
-                "estimator__C": [
-                    0.005,
-                    0.01,
-                    0.025,
-                    0.05,
-                    0.075,
-                    0.1,
-                    0.175,
-                    0.25,
-                    0.5,
-                    0.75,
-                    1.0,
-                    1.5,
-                    2.0,
-                    4.0,
-                ]
-            }
-        )
-    elif isinstance(model, DecisionTreeClassifier):
-        hyper_parameters.update(
-            {
-                "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20],
-                "estimator__criterion": ["gini", "entropy"],
-                "estimator__min_samples_split": [2, 3, 5],
-                "estimator__min_samples_leaf": [1, 2, 3, 5],
-            }
-        )
-    elif isinstance(model, RandomForestClassifier):
-        hyper_parameters.update(
-            {
-                "estimator__n_estimators": [15, 30, 50, 100, 125],
-                "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20, None],
-                "estimator__class_weight": ["balanced", "balanced_subsample"],
-                "estimator__min_samples_split": [2, 3, 5],
-                "estimator__min_samples_leaf": [1, 2, 3, 5],
-            }
-        )
-    elif isinstance(model, GradientBoostingClassifier):
-        hyper_parameters.update(
-            {
-                "estimator__n_estimators": [15, 30, 50, 100, 125],
-                "estimator__learning_rate": [0.025, 0.05, 0.1, 0.2, 0.4],
-                "estimator__max_depth": [2, 3, 5, 7, 10],
-                "estimator__min_samples_split": [2, 3, 5],
-                "estimator__min_samples_leaf": [1, 2, 3, 5],
-            }
-        )
-    elif isinstance(model, KNeighborsClassifier):
-        hyper_parameters.update(
-            {
-                "estimator__n_neighbors": [2, 3, 4, 6, 8, 12, 20],
-                "estimator__weights": ["uniform", "distance"],
-                "estimator__p": [1, 2, 3],
-            }
-        )
-    elif isinstance(model, SVC):
-        hyper_parameters.update(
-            {
-                "estimator__C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
-                "estimator__kernel": ["linear", "poly", "rbf", "sigmoid"],
-                "estimator__gamma": ["auto", "scale"],
-            }
-        )
+    hyper_parameters.update(get_hyper_param_grid(pipeline))
     inner_loop = StratifiedKFold(
         n_splits=n_inner, shuffle=True, random_state=random_state
     )
@@ -467,33 +467,6 @@ def benchmark_pipelines(
                 )
 
     return pd.DataFrame(benchmark_result).T
-
-
-def test_scores_pipelines(
-    pipelines: dict,
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-    X_test: pd.DataFrame,
-    y_test: pd.Series,
-    metric: Callable = roc_auc_score,
-):
-    """
-    Calculate test scores for each pipeline.
-    """
-    if metric == "roc_auc":
-        metric = roc_auc_score
-
-    test_result = {}
-    # Each classifier is associated with a set of pipelines.
-    for classifier_name, classifier_pipelines in pipelines.items():
-        classifier_scores = {}
-        test_result[classifier_name] = classifier_scores
-        # Benchmark all pipeline configurations with this classifier.
-        for pipeline_name, p in classifier_pipelines.items():
-            p.fit(X_train, y_train)
-            classifier_scores[f"{pipeline_name}"] = metric(y_test, p.predict(X_test))
-
-    return pd.DataFrame(test_result).T
 
 
 def calculate_pass_through_column_names_Richard(pipeline):

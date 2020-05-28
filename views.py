@@ -9,7 +9,7 @@ import numpy as np
 import seaborn as sns
 from sklearn.manifold import TSNE
 from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
 
@@ -18,6 +18,7 @@ from models import SparseFeatureFilter
 from pipelines import (
     calculate_pass_through_column_names_Richard,
     calculate_pass_through_column_names_Freeman,
+    get_hyper_param_grid,
     nested_cross_validate_score,
     reconstruct_categorical_variable_names,
 )
@@ -189,6 +190,8 @@ def fit_estimator_coefficients(X_train, y_train, X_test, y_test, pipeline):
     """
     Fit estimator coefficients only (locked preprocessing pipeline), ignore test data.
 
+    Use cross validation to determine the optimal hyper parameters.
+
     Signature:
     fit_model_coefficients(X, y)
     """
@@ -196,10 +199,16 @@ def fit_estimator_coefficients(X_train, y_train, X_test, y_test, pipeline):
     preprocess_pipeline = Pipeline(pipeline.steps[:-1])
     X_train_transf = preprocess_pipeline.transform(X_train)
 
-    # Fit the coefficients of the estimator only, don't refit the remaining pipeline.
+    # Fit the coefficients of the estimator only using cross validaiton. But don't refit
+    # the remaining pipeline.
     estimator = pipeline.named_steps["estimator"]
-    estimator.fit(X_train_transf, y_train)
-    return estimator.coef_.flatten()
+
+    hyper_parameters = get_hyper_param_grid(estimator)
+    inner_loop = StratifiedKFold(n_splits=5, shuffle=True, random_state=1234)
+    clf = GridSearchCV(estimator, param_grid=hyper_parameters, cv=inner_loop, n_jobs=-1)
+    clf.fit(X_train_transf, y_train)
+
+    return clf.best_estimator_.coef_.flatten()
 
 
 def fit_model_coefficients(X, y, pipeline):
