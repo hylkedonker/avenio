@@ -18,6 +18,7 @@ from models import SparseFeatureFilter
 from pipelines import (
     calculate_pass_through_column_names_Richard,
     calculate_pass_through_column_names_Freeman,
+    nested_cross_validate_score,
     reconstruct_categorical_variable_names,
 )
 from utils import bootstrap
@@ -453,7 +454,7 @@ def compare_prognostic_value_genomic_information(
     """
     results = pd.DataFrame(index=feature_label_pairs.keys(), columns=["mean", "std"])
     for label, (model, (X, y)) in feature_label_pairs.items():
-        scores = cross_val_score(model, X, y, scoring="roc_auc", cv=5)
+        scores = nested_cross_validate_score(model, X, y, metric="roc_auc")
         results.loc[label, "mean"] = np.mean(scores)
         results.loc[label, "std"] = np.std(scores)
     plt.errorbar(

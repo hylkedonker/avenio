@@ -326,52 +326,56 @@ def build_regression_pipelines(random_state: int = 1234) -> dict:
     }
 
 
-def build_classifier_pipelines(random_state: int = 1234) -> dict:
+def get_classifier_init_params(Classifier, random_state: int = 1234) -> dict:
     """
-    For a variety of classifier, create a set of pipelines.
+    Get initialisation parameters for the given model.
     """
-    classifiers = {
+    params = {
         DecisionTreeClassifier: {
-            "criterion": "gini",
             "random_state": random_state,
-            "max_depth": 5,
             "class_weight": "balanced",
-            "min_samples_leaf": 1,
         },
-        RandomForestClassifier: {
-            "random_state": random_state,
-            "n_estimators": 30,
-            "max_depth": 5,
-            "class_weight": "balanced_subsample",
-        },
+        RandomForestClassifier: {"random_state": random_state},
         GaussianNB: {},
-        GradientBoostingClassifier: {"random_state": random_state, "n_estimators": 125},
-        KNeighborsClassifier: {
-            "n_neighbors": 4,
-            # "weights": "distance"
-        },
+        GradientBoostingClassifier: {"random_state": random_state},
+        KNeighborsClassifier: {},
         LogisticRegression: {
             "random_state": random_state,
             "solver": "newton-cg",
             "penalty": "l2",
             "class_weight": "balanced",
             "multi_class": "auto",
-            "C": 0.025,
             "max_iter": 5000,
         },
         SVC: {
             "random_state": random_state,
-            "kernel": "rbf",
             "probability": True,
-            "gamma": "scale",
-            "C": 1.0,
             "class_weight": "balanced",
         },
         DummyClassifier: {"strategy": "most_frequent", "random_state": random_state},
     }
+    return params[Classifier]
+
+
+def build_classifier_pipelines(random_state: int = 1234) -> dict:
+    """
+    For a variety of classifier, create a set of pipelines.
+    """
+    classifiers = [
+        DecisionTreeClassifier,
+        RandomForestClassifier,
+        GaussianNB,
+        GradientBoostingClassifier,
+        KNeighborsClassifier,
+        LogisticRegression,
+        SVC,
+        DummyClassifier,
+    ]
     return {
-        str(Classifier.__name__): pipelines(estimator=Classifier(**kwargs))
-        for Classifier, kwargs in classifiers.items()
+        str(Classifier.__name__): pipelines(
+            estimator=Classifier(get_classifier_init_params(Classifier))
+        )
+        for Classifier in classifiers
     }
 
 

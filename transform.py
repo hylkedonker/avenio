@@ -575,14 +575,14 @@ def generate_data_pairs(filename_prefix: str, snv_type: str) -> dict:
     return named_pairs
 
 
-def generate_model_data_pairs(data_pairs: dict, model_parameters: dict) -> dict:
+def generate_model_data_pairs(data_pairs: dict, model) -> dict:
     """
     Combine data sets for different time points in (model, (X, y)) pairs.
 
     See `generate_data_pairs`.
     """
-    logistic_Freeman = pipeline_Freeman(LogisticRegression(**model_parameters))
-    logistic_Richard = pipeline_Richard(LogisticRegression(**model_parameters))
+    logistic_Freeman = pipeline_Freeman(model)
+    logistic_Richard = pipeline_Richard(model)
     return {
         "Clinical": (logistic_Richard, data_pairs["difference"]),
         "Clinical +\n Genomic $t_0$": (logistic_Freeman, data_pairs["t0"]),
