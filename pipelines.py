@@ -21,7 +21,7 @@ from sklearn.linear_model import (
     LinearRegression,
 )
 from sklearn.metrics import accuracy_score, roc_auc_score
-from sklearn.model_selection import cross_val_score, KFold
+from sklearn.model_selection import cross_val_score, GridSearchCV, StratifiedKFold
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
@@ -30,6 +30,7 @@ from sklearn.preprocessing import FunctionTransformer, KBinsDiscretizer, OneHotE
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 import numpy as np
+from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import clinical_features
@@ -364,6 +365,7 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
             "probability": True,
             "gamma": "scale",
             "C": 1.0,
+            "class_weight": "balanced",
         },
         DummyClassifier: {"strategy": "most_frequent", "random_state": random_state},
     }
@@ -373,11 +375,108 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
     }
 
 
+def nested_cross_validate_score(
+    pipeline,
+    X: pd.DataFrame,
+    y: pd.DataFrame,
+    metric: Callable = roc_auc_score,
+    n_inner=5,
+    n_outer=5,
+    hyper_parameters: dict = {},
+    random_state: int = 1234,
+):
+    """
+    Calculate double loop (stratified) cross-validated score for `pipeline`.
+    """
+    model = pipeline.named_steps["estimator"]
+    if isinstance(model, LogisticRegression):
+        hyper_parameters.update(
+            {
+                "estimator__C": [
+                    0.005,
+                    0.01,
+                    0.025,
+                    0.05,
+                    0.075,
+                    0.1,
+                    0.175,
+                    0.25,
+                    0.5,
+                    0.75,
+                    1.0,
+                    1.5,
+                    2.0,
+                    4.0,
+                ]
+            }
+        )
+    elif isinstance(model, DecisionTreeClassifier):
+        hyper_parameters.update(
+            {
+                "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20],
+                "estimator__criterion": ["gini", "entropy"],
+                "estimator__min_samples_split": [1, 2, 3, 5],
+                "estimator__min_samples_leaf": [1, 2, 3, 5],
+            }
+        )
+    elif isinstance(model, RandomForestClassifier):
+        hyper_parameters.update(
+            {
+                "estimator__n_estimators": [15, 30, 50, 100, 125],
+                "estimator__max_depth": [2, 3, 5, 7, 10, 15, 20, "none"],
+                "estimator__class_weight": ["balanced", "balanced_subsample"],
+                "estimator__min_samples_split": [1, 2, 3, 5],
+                "estimator__min_samples_leaf": [1, 2, 3, 5],
+            }
+        )
+    elif isinstance(model, GradientBoostingClassifier):
+        hyper_parameters.update(
+            {
+                "estimator__n_estimators": [15, 30, 50, 100, 125],
+                "estimator__learning_rate": [0.025, 0.05, 0.1, 0.2, 0.4],
+                "estimator__max_depth": [2, 3, 5, 7, 10],
+                "estimator__min_samples_split": [1, 2, 3, 5],
+                "estimator__min_samples_leaf": [1, 2, 3, 5],
+            }
+        )
+    elif isinstance(model, KNeighborsClassifier):
+        hyper_parameters.update(
+            {
+                "estimator__n_neighbors": [2, 3, 4, 6, 8, 12, 20],
+                "estimator__weights": ["uniform", "distance"],
+                "estimator__p": [1, 2, 3],
+            }
+        )
+    elif isinstance(model, SVC):
+        hyper_parameters.update(
+            {
+                "estimator__C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
+                "estimator__kernel": ["linear", "poly", "rbf", "sigmoid"],
+                "estimator__gamma": ["auto", "scale"],
+            }
+        )
+    inner_loop = StratifiedKFold(
+        n_splits=n_inner, shuffle=True, random_state=random_state
+    )
+    outer_loop = StratifiedKFold(
+        n_splits=n_outer, shuffle=True, random_state=random_state
+    )
+    clf = GridSearchCV(
+        estimator=pipeline, param_grid=hyper_parameters, cv=inner_loop, n_jobs=-1
+    )
+    nested_score = cross_val_score(clf, X, y, cv=outer_loop, scoring=metric)
+    return nested_score
+
+
 def benchmark_pipelines(
-    pipelines: dict, X: pd.DataFrame, y: pd.Series, metric: Callable = roc_auc_score
+    pipelines: dict,
+    X: pd.DataFrame,
+    y: pd.Series,
+    metric: Callable = roc_auc_score,
+    verbose=False,
 ) -> pd.DataFrame:
     """
-    Make a benchmark of classifier versus preprocessing architecture.
+    Benchmark pipelines using double loop (stratified) cross validation.
     """
     benchmark_result = {}
     # Each classifier is associated with a set of pipelines.
@@ -386,9 +485,11 @@ def benchmark_pipelines(
         benchmark_result[classifier_name] = classifier_scores
         # Benchmark all pipeline configurations with this classifier.
         for pipeline_name, p in classifier_pipelines.items():
-            k_fold_scores = cross_val_score(p, X, y, scoring=metric, cv=5)
-            classifier_scores[f"{pipeline_name} mean"] = np.mean(k_fold_scores)
-            classifier_scores[f"{pipeline_name} std"] = np.std(k_fold_scores)
+            scores = nested_cross_validate_score(p, X, y, metric=metric)
+            classifier_scores[f"{pipeline_name} mean"] = mean(scores)
+            classifier_scores[f"{pipeline_name} std"] = std(scores)
+            if verbose:
+                print(f"{classifier_name}: {mean(scores)}+/{std(scores)}")
 
     return pd.DataFrame(benchmark_result).T
 
@@ -507,7 +608,7 @@ def evaluate_training_size_dependence(
 
     # k-fold cross validation of training size dependence.
     # Keep track of scores for this particular fold.
-    for train, test in KFold(n_splits=k).split(X):
+    for train, test in StratifiedKFold(n_splits=k).split(X):
         if isinstance(X, pd.DataFrame):
             X_train, X_test, y_train, y_test = (
                 X.iloc[train],
@@ -548,4 +649,4 @@ def evaluate_training_size_dependence(
 
     # Calculate mean and standard deviation over folds.
     sizes, scores = np.array(sizes), np.array(scores)
-    return np.mean(sizes, axis=0), np.mean(scores, axis=0), np.std(scores, axis=0)
+    return mean(sizes, axis=0), mean(scores, axis=0), std(scores, axis=0)
