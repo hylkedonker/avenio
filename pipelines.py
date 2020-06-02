@@ -14,6 +14,7 @@ from sklearn.ensemble import (
     VotingClassifier,
     VotingRegressor,
 )
+from sklearn.feature_selection import SelectFWE
 from sklearn.linear_model import (
     ARDRegression,
     BayesianRidge,
@@ -281,13 +282,28 @@ def pipeline_Freeman(estimator):
     return Pipeline(steps=steps_Freeman)
 
 
+def pipeline_Bonferroni_Freeman(estimator):
+    """
+    Pipeline with clinical + genomic data: Freeman.
+    """
+    steps_Freeman = [
+        *clinical_preprocessing_steps(),
+        ("statistical_filter", SelectFWE()),
+        ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
+        ("encode_clinical_categories", clinical_encoder_step()),
+        ("estimator", estimator),
+    ]
+
+    return Pipeline(steps=steps_Freeman)
+
+
 def pipelines(estimator) -> dict:
     """
     Generate pipelines for a given classifier.
     """
     d = {
         "Richard": pipeline_Richard(estimator),
-        # "Julian": pipeline_Julian(estimator),
+        "Julian": pipeline_Julian(estimator),
         "Freeman": pipeline_Freeman(estimator),
         # "Nikolay": pipeline_Nikolay(estimator),
         # "Pyotr": pipeline_Pyotr(estimator),
@@ -389,16 +405,12 @@ def get_hyper_param_grid(model) -> dict:
             f"{prefix}n_estimators": [15, 30, 50, 100],
             f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
             f"{prefix}class_weight": ["balanced", "balanced_subsample"],
-            f"{prefix}min_samples_split": [2, 3, 5],
-            f"{prefix}min_samples_leaf": [1, 2, 3, 5],
         }
     elif isinstance(model, GradientBoostingClassifier):
         return {
             f"{prefix}n_estimators": [15, 30, 50, 100],
             f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
             f"{prefix}max_depth": [2, 3, 5, 7],
-            f"{prefix}min_samples_split": [2, 3, 5],
-            f"{prefix}min_samples_leaf": [1, 2, 3, 5],
         }
     elif isinstance(model, KNeighborsClassifier):
         return {

@@ -456,7 +456,9 @@ def view_linear_model_freeman(X, y, pipeline, top_n=10, filenames=None):
 
 
 def compare_prognostic_value_genomic_information(
-    feature_label_pairs: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]], plot_label=None
+    feature_label_pairs: Dict[str, Tuple[pd.DataFrame, pd.DataFrame]],
+    plot_label: Optional[str] = None,
+    fmt: Optional[str] = "-",
 ):
     """
     feature_label_pairs: Pairs of (model, (X, y)) to make a comparison.
@@ -466,9 +468,13 @@ def compare_prognostic_value_genomic_information(
         scores = nested_cross_validate_score(model, X, y, metric="roc_auc")
         results.loc[label, "mean"] = np.mean(scores)
         results.loc[label, "std"] = np.std(scores)
-    plt.errorbar(
-        x=results.index, y=results["mean"], yerr=results["std"], label=plot_label
-    )
+    # Plot settings.
+    kwargs = {"x": results.index, "y": results["mean"], "yerr": results["std"]}
+    if plot_label:
+        kwargs["label"] = plot_label
+    if fmt:
+        kwargs["fmt"] = fmt
+    plt.errorbar(**kwargs)
     degrees = 90
     plt.xticks(rotation=degrees)
     plt.ylim([0.5, 1.0])
