@@ -3,10 +3,11 @@ from typing import Callable, Optional, Union
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.feature_selection import GenericUnivariateSelect, VarianceThreshold
 from sklearn.preprocessing import MaxAbsScaler, OrdinalEncoder
 from sklearn.utils import safe_mask
 
-from utils import get_categorical_columns
+from utils import get_categorical_columns, get_numerical_columns
 
 
 class AggregateColumns(BaseEstimator, TransformerMixin):
@@ -352,14 +353,11 @@ class AutoMaxScaler(BaseEstimator, TransformerMixin):
         Determine which columns to min-max scale.
         """
         self.scaler_ = MaxAbsScaler(copy=True)
-        categorical_columns = get_categorical_columns(X, self.uniqueness_thresshold)
-
-        def is_numeric_and_not_ignored(column):
-            if column not in categorical_columns and column not in self.ignore_columns:
-                return True
-            return False
-
-        self.columns_to_transform_ = list(filter(is_numeric_and_not_ignored, X.columns))
+        self.columns_to_transform_ = get_numerical_columns(
+            data_frame=X,
+            ignore_columns=self.ignore_columns,
+            uniqueness_thresshold=self.uniqueness_thresshold,
+        )
         self.scaler_.fit(X[self.columns_to_transform_])
         return self
 
@@ -370,3 +368,66 @@ class AutoMaxScaler(BaseEstimator, TransformerMixin):
         data_subframe = X[self.columns_to_transform_]
         X[self.columns_to_transform_] = self.scaler_.transform(data_subframe)
         return X.copy()
+
+
+class AutoNumericFilter(BaseEstimator, TransformerMixin):
+    """
+    Automatically filter out numeric columns using statistical test (keeping the data
+    frame in order).
+    """
+
+    def __init__(
+        self,
+        filter_method="fdr",
+        ignore_columns: list = [],
+        uniqueness_thresshold: Optional[float] = None,
+        alpha: float = 0.05,
+    ):
+        """
+        filter_method (Estimator): Sklearn feature selection estimator.
+        """
+        # Removes constant features first.
+        self.filter_method = filter_method
+        self.ignore_columns = ignore_columns
+        self.uniqueness_thresshold = uniqueness_thresshold
+        self.alpha = alpha
+
+    def fit(self, X, y=None):
+        """
+        Determine what numerical columns to filter.
+        """
+        self.pre_filter_ = VarianceThreshold()
+        self.filter_ = GenericUnivariateSelect(
+            mode=self.filter_method, param=self.alpha
+        )
+        self.numeric_columns = get_numerical_columns(
+            data_frame=X,
+            ignore_columns=self.ignore_columns,
+            uniqueness_thresshold=self.uniqueness_thresshold,
+        )
+
+        # Remove zero-variance features.
+        subframe = X[self.numeric_columns]
+        self.pre_filter_.fit(subframe, y)
+        constant_mask = ~self.pre_filter_.get_support(indices=False)
+        constant_features = subframe.columns[constant_mask]
+
+        # Apply `filter_method` on the remaining columns.
+        filtered_subframe = subframe.drop(columns=constant_features)
+        self.filter_.fit(filtered_subframe, y)
+        filter_mask = ~self.filter_.get_support(indices=False)
+        insignificant_features = filtered_subframe.columns[filter_mask]
+
+        self.columns_to_remove = list(constant_features) + list(insignificant_features)
+        print(
+            "Removing {}/{} numeric columns.".format(
+                len(self.columns_to_remove), len(self.numeric_columns)
+            )
+        )
+        return self
+
+    def transform(self, X, y=None):
+        """
+        Filter out the numeric columns, retaining the pandas structure.
+        """
+        return X.drop(columns=self.columns_to_remove)

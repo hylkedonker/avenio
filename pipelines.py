@@ -14,7 +14,6 @@ from sklearn.ensemble import (
     VotingClassifier,
     VotingRegressor,
 )
-from sklearn.feature_selection import SelectFWE
 from sklearn.linear_model import (
     ARDRegression,
     BayesianRidge,
@@ -36,7 +35,12 @@ from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import clinical_features
-from models import AggregateColumns, AutoMaxScaler, SparseFeatureFilter
+from models import (
+    AggregateColumns,
+    AutoMaxScaler,
+    AutoNumericFilter,
+    SparseFeatureFilter,
+)
 
 
 RANDOM_STATE = 1234
@@ -274,7 +278,7 @@ def pipeline_Freeman(estimator):
     """
     steps_Freeman = [
         *clinical_preprocessing_steps(),
-        ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
+        ("normalise_genomic_data", AutoMaxScaler()),
         ("encode_clinical_categories", clinical_encoder_step()),
         ("estimator", estimator),
     ]
@@ -282,14 +286,14 @@ def pipeline_Freeman(estimator):
     return Pipeline(steps=steps_Freeman)
 
 
-def pipeline_Bonferroni_Freeman(estimator):
+def pipeline_Freeman_filtered(estimator):
     """
     Pipeline with clinical + genomic data: Freeman.
     """
     steps_Freeman = [
         *clinical_preprocessing_steps(),
-        ("statistical_filter", SelectFWE()),
-        ("normalise_genomic_data", AutoMaxScaler(ignore_columns=["Age"])),
+        ("normalise_genomic_data", AutoMaxScaler()),
+        ("statistical_filter", AutoNumericFilter(filter_method="fpr")),
         ("encode_clinical_categories", clinical_encoder_step()),
         ("estimator", estimator),
     ]
@@ -303,7 +307,8 @@ def pipelines(estimator) -> dict:
     """
     d = {
         "Richard": pipeline_Richard(estimator),
-        "Julian": pipeline_Julian(estimator),
+        "Bonferroni": pipeline_Freeman_filtered(estimator),
+        # "Julian": pipeline_Julian(estimator),
         "Freeman": pipeline_Freeman(estimator),
         # "Nikolay": pipeline_Nikolay(estimator),
         # "Pyotr": pipeline_Pyotr(estimator),
@@ -369,62 +374,76 @@ def get_hyper_param_grid(model) -> dict:
     """
     Get parameter grid for hyper parameter tuning.
     """
+    filter_params = {}
+
     prefix = ""
     if isinstance(model, Pipeline):
         prefix = "estimator__"
+        if "statistical_filter" in model.named_steps:
+            filter_params.update({"statistical_filter__alpha": [0.05, 0.1, 0.2, 0.4]})
         model = model.named_steps["estimator"]
 
     if isinstance(model, LogisticRegression):
-        return {
-            f"{prefix}C": [
-                0.005,
-                0.01,
-                0.025,
-                0.05,
-                0.075,
-                0.1,
-                0.175,
-                0.25,
-                0.5,
-                0.75,
-                1.0,
-                1.5,
-                2.0,
-                4.0,
-            ]
-        }
+        filter_params.update(
+            {
+                f"{prefix}C": [
+                    0.005,
+                    0.01,
+                    0.025,
+                    0.05,
+                    0.075,
+                    0.1,
+                    0.175,
+                    0.25,
+                    0.5,
+                    0.75,
+                    1.0,
+                    1.5,
+                    2.0,
+                    4.0,
+                ]
+            }
+        )
     elif isinstance(model, DecisionTreeClassifier):
-        return {
-            f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20],
-            f"{prefix}criterion": ["gini", "entropy"],
-            f"{prefix}min_samples_split": [2, 3, 5],
-            f"{prefix}min_samples_leaf": [1, 2, 3, 5],
-        }
+        filter_params.update(
+            {
+                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20],
+                f"{prefix}criterion": ["gini", "entropy"],
+            }
+        )
     elif isinstance(model, RandomForestClassifier):
-        return {
-            f"{prefix}n_estimators": [15, 30, 50, 100],
-            f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
-            f"{prefix}class_weight": ["balanced", "balanced_subsample"],
-        }
+        filter_params.update(
+            {
+                f"{prefix}n_estimators": [15, 30, 50, 100],
+                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
+                f"{prefix}class_weight": ["balanced", "balanced_subsample"],
+            }
+        )
     elif isinstance(model, GradientBoostingClassifier):
-        return {
-            f"{prefix}n_estimators": [15, 30, 50, 100],
-            f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
-            f"{prefix}max_depth": [2, 3, 5, 7],
-        }
+        filter_params.update(
+            {
+                f"{prefix}n_estimators": [15, 30, 50, 100],
+                f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
+                f"{prefix}max_depth": [2, 3, 5, 7],
+            }
+        )
     elif isinstance(model, KNeighborsClassifier):
-        return {
-            f"{prefix}n_neighbors": [2, 3, 4, 6, 8, 12, 20],
-            f"{prefix}weights": ["uniform", "distance"],
-            f"{prefix}p": [1, 2, 3],
-        }
+        filter_params.update(
+            {
+                f"{prefix}n_neighbors": [2, 3, 4, 6, 8, 12, 20],
+                f"{prefix}weights": ["uniform", "distance"],
+                f"{prefix}p": [1, 2, 3],
+            }
+        )
     elif isinstance(model, SVC):
-        return {
-            f"{prefix}C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
-            f"{prefix}kernel": ["linear", "poly", "rbf", "sigmoid"],
-            f"{prefix}gamma": ["auto", "scale"],
-        }
-    return {}
+        filter_params.update(
+            {
+                f"{prefix}C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
+                f"{prefix}kernel": ["linear", "poly", "rbf", "sigmoid"],
+                f"{prefix}gamma": ["auto", "scale"],
+            }
+        )
+    return filter_params
 
 
 def nested_cross_validate_score(

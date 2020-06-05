@@ -48,6 +48,31 @@ def get_categorical_columns(
     return categorical_columns
 
 
+def get_numerical_columns(
+    data_frame: pd.DataFrame,
+    ignore_columns: list = [],
+    uniqueness_thresshold: Optional[float] = None,
+) -> list:
+    """
+    Single out numerical columns.
+
+    Args:
+        ignore_columns (list): Remove these columns from the consideration.
+        uniqueness_thresshold (float): If more than this fraction of the values are
+            unique, consider the column numerical.
+    """
+    categorical_columns = get_categorical_columns(data_frame, uniqueness_thresshold)
+
+    def is_numeric_and_not_ignored(column):
+        """ Columns not categorical are numeric. """
+        if column not in categorical_columns and column not in ignore_columns:
+            return True
+        return False
+
+    numerical_columns = list(filter(is_numeric_and_not_ignored, data_frame.columns))
+    return numerical_columns
+
+
 def bootstrap(k):
     """
     Decorator for bootstrapping function `k` times.
