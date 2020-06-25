@@ -15,6 +15,7 @@ RUN pip3 install -r /tmp/requirements.txt
 
 # Copy the code.
 RUN mkdir /package/
+RUN mkdir /package/log/ /package/output/
 RUN mkdir -p /data/bam/
 RUN mkdir -p /metadata/
 WORKDIR /package/
@@ -29,3 +30,5 @@ COPY clinical_20200420.sav /data/
 # RUN python3 fetch_path_ways.py
 # # Make train and test splits.
 # RUN runipy process_final_results.ipynb
+
+# RUN bash /package/fragment_count/analysis_bams.sh

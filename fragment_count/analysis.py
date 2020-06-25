@@ -1,5 +1,6 @@
 from collections import Counter, defaultdict
-import os
+import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -14,7 +15,6 @@ def collect_fragment_sizes(
     Pool fragment sizes per base at given position.
     """
     base_counts: Dict[str, List[float]] = defaultdict(list)
-    print(chromosome, start_position)
 
     for pile in bam_file.pileup(
         contig=chromosome, start=start_position, truncate=False
@@ -39,67 +39,71 @@ def collect_fragment_sizes(
     return base_counts
 
 
-def enlarge_data_frame(data_frame, new_index_size):
-    """
-    Expand the number of rows up to and including `index_size`.
-    """
-    empty_df = pd.DataFrame(index=range(data_frame.index[-1], new_index_size + 1))
-    return data_frame.append(empty_df).fillna(0)
-
-
 def compute_variant_fragment_size_counts(
-    run_folder: Path, output_folder: Path, run_spreadsheet_path: Path
+    run_folder: Path, output_folder: Path, path_spreadsheet_runs: Path
 ):
     """
     Compute the fragment size counts for each variant, and store on disk.
     """
     folder_name = run_folder.name
     bam_file = run_folder / f"Deduped-{folder_name}.bam"
-    output_csv = output_folder / f"{folder_name}__fragment_size_counts.csv"
-    no_output_csv = output_folder / f"{folder_name}__unparsable.csv"
+    output_file = output_folder / f"{folder_name}.json"
 
     alignments = pysam.AlignmentFile(bam_file)
+    logging.debug(f"Loading {bam_file}.")
 
     # Find variants for this run from the spreadsheet file.
-    run_sheet = pd.read_excel(run_spreadsheet_path, sheet_name=1)
+    run_sheet = pd.read_excel(path_spreadsheet_runs, sheet_name=1)
     columns_to_keep = ["Gene", "Coding Change", "Genomic Position"]
     index_columns = ["Gene", "Genomic Position"]
     run_variants = run_sheet[run_sheet["Sample ID"] == folder_name]
     run_variants = run_variants[columns_to_keep]
 
-    variants_unparsable = pd.DataFrame(index=run_variants[index_columns])
-    size_counts = pd.DataFrame(index=range(1, 500))
+    output_json = {
+        "time_point": int(folder_name.split("_")[1]),
+        "unparsable_variants": [],
+        "variants": [],
+    }
 
     # Go through each variant.
     for idx, row in run_variants.iterrows():
         pos = row[index_columns]
         chromosome, position = pos["Genomic Position"].split(":")
+        logging.debug(f"Analysing variant {chromosome} at {position}.")
 
         # Skip CNV's.
         if "-" in position:
+            output_json["unparsable_variants"].append(tuple(pos))
             continue
-        # Remove variant from the unparsable list.
-        variants_unparsable.drop(index=tuple(pos), inplace=True)
+
+        variant_item = {
+            "chromosome": chromosome,
+            "position": position,
+            "gene": pos["Gene"],
+            "fragment_size_counts": {"A": {}, "C": {}, "T": {}, "G": {}},
+        }
 
         fragment_sizes = collect_fragment_sizes(alignments, chromosome, int(position))
+        fragment_counts = {len(v): k for k, v in fragment_sizes.items()}
+        variant_item["nucleotide_normal"] = fragment_counts[max(fragment_counts.keys())]
+        variant_item["nucleotide_variants"] = [
+            v
+            for k, v in fragment_counts.items()
+            if k != 0 and v != variant_item["nucleotide_normal"]
+        ]
         for base in fragment_sizes.keys():
-            column_name = tuple(pos) + (base,)
-            size_counts[column_name] = 0
             # Compute the number of occurences of each fragment size.
             counts = Counter(fragment_sizes[base])
+            variant_item["fragment_size_counts"][base] = counts
 
-            # Enlarge index, when a fragment size falls outside the index range.
-            largest_fragment = max(counts.keys())
-            if largest_fragment > size_counts.index[-1]:
-                size_counts = enlarge_data_frame(
-                    size_counts, new_index_size=largest_fragment
-                )
+        output_json["variants"].append(variant_item)
 
-            ordered_keys, ordered_values = zip(*counts.items())
-            size_counts.loc[ordered_keys, column_name] = ordered_values
-
-    size_counts.to_csv(output_csv)
-    variants_unparsable.to_csv(no_output_csv)
+    # To disk.
+    with open(output_file, "w") as file_object:
+        file_object.write(json.dumps(output_json, indent=4, sort_keys=True))
+        logging.debug(
+            f"Wrote fragment size counts for {folder_name} to disk:\n {output_file}"
+        )
 
 
 def pool_variant_fragment_sizes(
