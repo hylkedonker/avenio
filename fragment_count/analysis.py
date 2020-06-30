@@ -28,9 +28,9 @@ def collect_fragment_sizes(
             if read.is_del or read.is_refskip:
                 continue
 
-            # Skip mates, because they refer to the same fragment.
-            if read.alignment.is_paired and read.alignment.is_read2:
-                continue
+            # # Skip mates, because they refer to the same fragment.
+            # if read.alignment.is_paired and read.alignment.is_read2:
+            #     continue
 
             base = read.alignment.query_sequence[read.query_position]
             fragment_length = abs(read.alignment.template_length)
