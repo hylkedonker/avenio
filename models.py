@@ -332,6 +332,66 @@ class MergeRareCategories(BaseEstimator, TransformerMixin):
         return X
 
 
+class TransformColumnType(BaseEstimator, TransformerMixin):
+    """
+    Apply transformation to all numeric or all categorical columns.
+    """
+
+    def __init__(
+        self,
+        column_type: str,
+        transformation: Union[BaseEstimator, Callable],
+        ignore_columns: list = [],
+        uniqueness_thresshold: Optional[float] = None,
+    ):
+        """
+        Args:
+            uniqueness_thresshold: Columns with less unique values than this
+                are considered categorical.
+        """
+        self.ignore_columns = ignore_columns
+        self.uniqueness_thresshold = uniqueness_thresshold
+        if column_type not in ("numeric", "categorical"):
+            raise ValueError
+        self.transformation = transformation
+        self.column_type = column_type
+
+    def fit(self, X, y=None):
+        """
+        Determine which columns need to be transformed.
+        """
+        if self.column_type == "numeric":
+            self.columns_to_transform_ = get_numerical_columns(
+                data_frame=X,
+                ignore_columns=self.ignore_columns,
+                uniqueness_thresshold=self.uniqueness_thresshold,
+            )
+        else:
+            self.columns_to_transform_ = get_categorical_columns(
+                data_frame=X, uniqueness_thresshold=self.uniqueness_thresshold
+            )
+
+        if isinstance(self.transformation, BaseEstimator):
+            self.transformation.fit(X[self.columns_to_transform_])
+
+        return self
+
+    def transform(self, X, y=None):
+        """
+        Apply the transformation to the selected columns.
+        """
+        if isinstance(self.transformation, BaseEstimator):
+            X[self.columns_to_transform_] = self.transformation.transform(
+                X[self.columns_to_transform_]
+            )
+        else:
+            X[self.columns_to_transform_] = X[self.columns_to_transform_].applymap(
+                self.transformation
+            )
+
+        return X.copy()
+
+
 class AutoMaxScaler(BaseEstimator, TransformerMixin):
     """
     Determine non-categorical columns and max scale the values.

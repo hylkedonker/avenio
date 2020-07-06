@@ -2,44 +2,29 @@ from pprint import pprint
 from typing import Callable
 
 import pandas as pd
-from sklearn.base import BaseEstimator
 from sklearn.compose import ColumnTransformer
-from sklearn.decomposition import PCA, NMF
-from sklearn.dummy import DummyClassifier, DummyRegressor
-from sklearn.ensemble import (
-    GradientBoostingClassifier,
-    GradientBoostingRegressor,
-    RandomForestClassifier,
-    RandomForestRegressor,
-    VotingClassifier,
-    VotingRegressor,
-)
-from sklearn.linear_model import (
-    ARDRegression,
-    BayesianRidge,
-    LogisticRegression,
-    ElasticNet,
-    LinearRegression,
-)
+from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import cross_val_score, GridSearchCV, StratifiedKFold
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.naive_bayes import GaussianNB, CategoricalNB
+from sklearn.neighbors import KNeighborsClassifier
 
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, KBinsDiscretizer, OneHotEncoder
-from sklearn.svm import SVC, SVR
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 import numpy as np
 from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
-from const import clinical_features
+from const import clinical_features, get_hyper_param_grid
 from models import (
-    AggregateColumns,
     AutoMaxScaler,
     AutoNumericFilter,
     SparseFeatureFilter,
+    TransformColumnType,
 )
 
 
@@ -301,6 +286,41 @@ def pipeline_Freeman_filtered(estimator):
     return Pipeline(steps=steps_Freeman)
 
 
+def pipeline_Donker(estimator):
+    """
+    Pipeline with clinical + genomic data: Freeman.
+    """
+
+    def genomics_discretiser(value):
+        """ Bin genomics with ordinal encoding. """
+        if value > 0:
+            return ">0"
+        elif value < 0:
+            return "<0"
+        return "0"
+
+    steps = [
+        *clinical_preprocessing_steps(),
+        (
+            "discretise_genomics",
+            TransformColumnType(
+                column_type="numeric", transformation=genomics_discretiser
+            ),
+        ),
+        ("LabelEncoder", OneHotEncoder(handle_unknown="ignore", sparse=False)),
+        # (
+        #     "encode_genomics",
+        #     TransformColumnType(
+        #         column_type="numeric", transformation=genomics_discretiser
+        #     ),
+        # ),
+        # ("encode_clinical_categories", clinical_encoder_step()),
+        ("estimator", estimator),
+    ]
+
+    return Pipeline(steps=steps)
+
+
 def pipelines(estimator) -> dict:
     """
     Generate pipelines for a given classifier.
@@ -368,82 +388,6 @@ def build_classifier_pipelines(random_state: int = 1234) -> dict:
         )
         for Classifier in classifiers
     }
-
-
-def get_hyper_param_grid(model) -> dict:
-    """
-    Get parameter grid for hyper parameter tuning.
-    """
-    filter_params = {}
-
-    prefix = ""
-    if isinstance(model, Pipeline):
-        prefix = "estimator__"
-        if "statistical_filter" in model.named_steps:
-            filter_params.update({"statistical_filter__alpha": [0.05, 0.1, 0.2, 0.4]})
-        model = model.named_steps["estimator"]
-
-    if isinstance(model, LogisticRegression):
-        filter_params.update(
-            {
-                f"{prefix}C": [
-                    0.005,
-                    0.01,
-                    0.025,
-                    0.05,
-                    0.075,
-                    0.1,
-                    0.175,
-                    0.25,
-                    0.5,
-                    0.75,
-                    1.0,
-                    1.5,
-                    2.0,
-                    4.0,
-                ]
-            }
-        )
-    elif isinstance(model, DecisionTreeClassifier):
-        filter_params.update(
-            {
-                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20],
-                f"{prefix}criterion": ["gini", "entropy"],
-            }
-        )
-    elif isinstance(model, RandomForestClassifier):
-        filter_params.update(
-            {
-                f"{prefix}n_estimators": [15, 30, 50, 100],
-                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
-                f"{prefix}class_weight": ["balanced", "balanced_subsample"],
-            }
-        )
-    elif isinstance(model, GradientBoostingClassifier):
-        filter_params.update(
-            {
-                f"{prefix}n_estimators": [15, 30, 50, 100],
-                f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
-                f"{prefix}max_depth": [2, 3, 5, 7],
-            }
-        )
-    elif isinstance(model, KNeighborsClassifier):
-        filter_params.update(
-            {
-                f"{prefix}n_neighbors": [2, 3, 4, 6, 8, 12, 20],
-                f"{prefix}weights": ["uniform", "distance"],
-                f"{prefix}p": [1, 2, 3],
-            }
-        )
-    elif isinstance(model, SVC):
-        filter_params.update(
-            {
-                f"{prefix}C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
-                f"{prefix}kernel": ["linear", "poly", "rbf", "sigmoid"],
-                f"{prefix}gamma": ["auto", "scale"],
-            }
-        )
-    return filter_params
 
 
 def nested_cross_validate_score(

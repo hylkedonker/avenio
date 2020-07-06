@@ -1,10 +1,14 @@
-from typing import Optional
+from collections import defaultdict
+from functools import wraps
+from typing import Callable, Optional
 
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
+
+from const import get_hyper_param_grid
 
 
 def get_categorical_columns(
@@ -130,6 +134,64 @@ def bootstrap(k):
         return bootstrap_k_fold
 
     return wrap_k_fold
+
+
+def double_cross_validate(m_inner: int = 5, n_outer: int = 5, verbose=True) -> Callable:
+    """
+    Perform `m_inner` x `n_outer` double (or netsed) cross validation.
+    """
+
+    def wrap_m_x_n_fold(function: Callable) -> Callable:
+        """
+        Wrapper for `function`.
+        """
+
+        @wraps(function)
+        def cross_validate_m_x_n(
+            pipeline, X: pd.DataFrame, y: pd.DataFrame, *args, **kwargs
+        ):
+            seed = 1234
+            if m_inner > 1:
+                inner_loop = StratifiedKFold(
+                    n_splits=m_inner, shuffle=True, random_state=seed
+                )
+                clf = GridSearchCV(
+                    estimator=pipeline,
+                    param_grid=get_hyper_param_grid(pipeline),
+                    cv=inner_loop,
+                    n_jobs=-1,
+                    verbose=3 * int(verbose),
+                )
+            outer_loop = StratifiedKFold(
+                n_splits=n_outer, shuffle=True, random_state=seed
+            )
+            outputs = defaultdict(list)
+            for i, (train, test) in enumerate(outer_loop.split(X, y)):
+                X_train, y_train = X.iloc[train], y.iloc[train]
+                if m_inner > 1:
+                    estimator = clf.fit(X_train, y_train).best_estimator_
+                else:
+                    estimator = pipeline.fit(X_train, y_train)
+
+                X_test, y_test = X.iloc[test], y.iloc[test]
+                predictions = function(estimator, X_test, y_test)
+                if isinstance(predictions, dict):
+                    for k, v in predictions.items():
+                        outputs[k].append(v)
+                else:
+                    outputs["metric"].append(v)
+
+            if len(outputs.keys()) == 1:
+                k = next(iter(outputs.keys()))
+                return np.mean(outputs[k], axis=0), np.std(outputs[k], axis=0)
+            return (
+                {k: np.mean(v, axis=0) for k, v in outputs.items()},
+                {k: np.std(v, axis=0) for k, v in outputs.items()},
+            )
+
+        return cross_validate_m_x_n
+
+    return wrap_m_x_n_fold
 
 
 def get_sub_pipeline(pipeline, step: int):
