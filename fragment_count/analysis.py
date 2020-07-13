@@ -1,6 +1,8 @@
 from collections import Counter, defaultdict
+import glob
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -40,33 +42,34 @@ def collect_fragment_sizes(
 
 
 def compute_variant_fragment_size_counts(
-    run_folder: Path, output_folder: Path, path_spreadsheet_runs: Path
+    run_folder: Path, output_folder: Path, variant_metadata: pd.DataFrame
 ):
     """
     Compute the fragment size counts for each variant, and store on disk.
     """
     folder_name = run_folder.name
-    bam_file = run_folder / f"Deduped-{folder_name}.bam"
+    prefix, suffix = folder_name.split("_")
+
+    # Find the bam file.
+    bam_pattern = run_folder / f"Deduped-{prefix}*.bam"
+    bams = glob.glob(str(bam_pattern))
+    assert len(bams) == 1
+    bam_file = bams[0]
+
     output_file = output_folder / f"{folder_name}.json"
 
     alignments = pysam.AlignmentFile(bam_file)
     logging.debug(f"Loading {bam_file}.")
 
-    # Find variants for this run from the spreadsheet file.
-    run_sheet = pd.read_excel(path_spreadsheet_runs, sheet_name=1)
-    columns_to_keep = ["Gene", "Coding Change", "Genomic Position"]
-    index_columns = ["Gene", "Genomic Position"]
-    run_variants = run_sheet[run_sheet["Sample ID"] == folder_name]
-    run_variants = run_variants[columns_to_keep]
-
     output_json = {
-        "time_point": int(folder_name.split("_")[1]),
+        "time_point": int(suffix) if suffix.isdigit() else suffix,
         "unparsable_variants": [],
         "variants": [],
     }
 
-    # Go through each variant.
-    for idx, row in run_variants.iterrows():
+    # Go through each variant called by the Avenio platform.
+    index_columns = ["Gene", "Genomic Position"]
+    for idx, row in variant_metadata.iterrows():
         pos = row[index_columns]
         chromosome, position = pos["Genomic Position"].split(":")
         logging.debug(f"Analysing variant {chromosome} at {position}.")
