@@ -2,7 +2,6 @@ from collections import Counter, defaultdict
 import glob
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -19,7 +18,7 @@ def collect_fragment_sizes(
     base_counts: Dict[str, List[float]] = defaultdict(list)
 
     for pile in bam_file.pileup(
-        contig=chromosome, start=start_position, truncate=False
+        contig=chromosome, start=start_position, truncate=False, ignore_overlaps=True
     ):
         # We are only interested in the bases on `start_pos`.
         if pile.pos != start_position - 1:
@@ -29,10 +28,6 @@ def collect_fragment_sizes(
         for read in pile.pileups:
             if read.is_del or read.is_refskip:
                 continue
-
-            # # Skip mates, because they refer to the same fragment.
-            # if read.alignment.is_paired and read.alignment.is_read2:
-            #     continue
 
             base = read.alignment.query_sequence[read.query_position]
             fragment_length = abs(read.alignment.template_length)

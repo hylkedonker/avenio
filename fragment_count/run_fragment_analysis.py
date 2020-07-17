@@ -61,8 +61,8 @@ for sample in glob.glob(str(path_pattern)):
         sample_output_location = output_folder / "pbmc_plus_plasma"
     else:
         sample_output_location = output_folder / "tumor_derived"
-    run_metadata = select_sample_variants(sample_folder.name)
 
+    run_metadata = select_sample_variants(sample_folder.name)
     compute_variant_fragment_size_counts(
         sample_folder, sample_output_location, variant_metadata=run_metadata
     )
