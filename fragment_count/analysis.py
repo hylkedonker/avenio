@@ -83,7 +83,9 @@ def compute_variant_fragment_size_counts(
 
         fragment_sizes = collect_fragment_sizes(alignments, chromosome, int(position))
         fragment_counts = {len(v): k for k, v in fragment_sizes.items()}
+        # Wild type is most abundant.
         variant_item["nucleotide_normal"] = fragment_counts[max(fragment_counts.keys())]
+        # The other bases are considered variants.
         variant_item["nucleotide_variants"] = [
             v
             for k, v in fragment_counts.items()

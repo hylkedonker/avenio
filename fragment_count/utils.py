@@ -27,7 +27,11 @@ def as_series(distribution: dict, fill_upto_incl=-1) -> pd.Series:
         return s.sort_index()
     keys, values = zip(*distribution.items())
     s = pd.Series(index=range(1, max(max(keys), fill_upto_incl) + 1), dtype=int)
-    s[keys] = values
+    if len(keys) > 1:
+        s[keys] = values
+    else:
+        # Hack for pandas bug.
+        s[keys[0]] = values[0]
     return s
 
 
@@ -42,32 +46,65 @@ def as_dataframe(gene_counts: defaultdict, max_fragment_size: int) -> pd.DataFra
     return df
 
 
-def pool_counts_to_dataframe(json_files) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_json_as_dataframe(filename: str):
     """
-    Aggregate count statistics from list of json files.
+    Load single JSON file into pandas dataframe/
     """
     normal_counts = defaultdict(lambda: defaultdict(int))
     variant_counts = defaultdict(lambda: defaultdict(int))
     max_fragment_size = 1
-    for filename in json_files:
-        with open(filename) as file_object:
-            fragments = json.load(file_object)
-            for var in fragments["variants"]:
-                counts = var["fragment_size_counts"]
-                normal_base = var["nucleotide_normal"]
-                gene = var["gene"]
-                normal_counts[gene] = dict_sum(normal_counts[gene], counts[normal_base])
-                for base in var["nucleotide_variants"]:
-                    variant_counts[gene] = dict_sum(variant_counts[gene], counts[base])
-            max_fragment_size = max(
-                max(normal_counts[gene].keys()),
-                max(variant_counts[gene].keys()),
-                max_fragment_size,
-            )
+    with open(filename) as file_object:
+        fragments = json.load(file_object)
+        for var in fragments["variants"]:
+            counts = var["fragment_size_counts"]
+            normal_base = var["nucleotide_normal"]
+            gene = var["gene"]
+            normal_counts[gene] = dict_sum(normal_counts[gene], counts[normal_base])
+            for base in var["nucleotide_variants"]:
+                variant_counts[gene] = dict_sum(variant_counts[gene], counts[base])
 
+                max_fragment_size = max(
+                    max(normal_counts[gene].keys()),
+                    max(variant_counts[gene].keys()),
+                    max_fragment_size,
+                )
     normals = as_dataframe(normal_counts, max_fragment_size)
     variants = as_dataframe(variant_counts, max_fragment_size)
     return normals, variants
+
+
+def determine_dimensions(data_frames):
+    """
+    Determine the largest indices (fragment size) and columns (gene names).
+    """
+    genes = set()
+    max_fragment_size = 1
+    for df in data_frames:
+        max_fragment_size = max(max_fragment_size, max(df.index))
+        genes = genes.union(set(df.columns))
+    return range(1, max_fragment_size + 1), sorted(genes)
+
+
+def pool_counts_to_dataframe(json_files) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Aggregate count statistics from list of json files.
+    """
+    # Index the genes and the maximum fragment size range.
+    data_frames = []
+    for filename in json_files:
+        dfs = load_json_as_dataframe(filename)
+        data_frames.extend(dfs)
+
+    indices, columns = determine_dimensions(data_frames)
+
+    kwargs = {"index": indices, "columns": columns, "dtype": int}
+    result_normal = pd.DataFrame(0, **kwargs)
+    result_variant = pd.DataFrame(0, **kwargs)
+    for i in range(len(data_frames) // 2):
+        result_normal += data_frames[2 * i]
+        result_variant += data_frames[2 * i + 1]
+
+    return result_normal.copy(), result_variant.copy()
 
 
 def to_cumulative(counts):
