@@ -109,8 +109,10 @@ def load_samples_as_data_frame(filenames: Iterable[str]) -> pd.DataFrame:
     def _concatenate(data_frames):
         items = [pd.DataFrame(0, **kwargs).add(df, fill_value=0) for df in data_frames]
 
-        names = [f.split("/")[-1].split(".")[0] for f in filenames]
-        panel = pd.concat(items, keys=names, axis=0)
+        names = [tuple(f.split("/")[-1].split(".")[0].split("_")) for f in filenames]
+        panel = pd.concat(
+            items, keys=names, names=["Patient ID", "sample number"], axis=0
+        )
         panel.index.set_names(["sample", "length (bp)"], inplace=True)
         return panel
 
