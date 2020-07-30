@@ -56,7 +56,7 @@ def single_out_no_mutation_patients(spread_sheet_filename: str) -> pd.Series:
 
 
 def load_avenio_files(
-    spread_sheet_filename: str = "variant_list_20200409.xlsx",
+    spread_sheet_filename: str = "variant_list_20200730.xlsx",
     spss_filename: str = "clinical_20200420.sav",
 ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """

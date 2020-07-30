@@ -23,7 +23,7 @@ WORKDIR /package/
 #COPY *.ipynb /package/
 #COPY *.py /package/
 ## Copy the genomic and clinical data.
-COPY variant_list_20200409.xlsx /metadata/
+COPY variant_list_20200730.xlsx /metadata/
 COPY clinical_20200420.sav /data/
 
 # # Fetch KEGG pathways.

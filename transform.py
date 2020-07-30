@@ -310,7 +310,7 @@ def transpose_and_transform(
 
 
 def load_process_and_store_spreadsheets(
-    spread_sheet_filename: str = "variant_list_20200409.xlsx",
+    spread_sheet_filename: str = "variant_list_20200730.xlsx",
     spss_filename: str = "clinical_20200420.sav",
     transformation: Callable = lambda x, y: y - x,
     columns: List[str] = [

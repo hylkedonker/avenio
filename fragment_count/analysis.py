@@ -63,14 +63,15 @@ def compute_variant_fragment_size_counts(
     }
 
     # Go through each variant called by the Avenio platform.
-    index_columns = ["Gene", "Genomic Position"]
+    index_columns = ["Gene", "Genomic Position", "Mutation Class"]
+
     for idx, row in variant_metadata.iterrows():
         pos = row[index_columns]
         chromosome, position = pos["Genomic Position"].split(":")
         logging.debug(f"Analysing variant {chromosome} at {position}.")
 
-        # Skip CNV's.
-        if "-" in position:
+        # Skip CNV's and indels.
+        if pos["Mutation Class"] in ("Indel", "CNV"):
             output_json["unparsable_variants"].append(tuple(pos))
             continue
 

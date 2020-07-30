@@ -24,7 +24,7 @@ logging.basicConfig(
 
 def select_sample_variants(sample_folder_name: str) -> pd.DataFrame:
     """ Find variants for this run from the spreadsheet run file. """
-    run_metadata = Path("/metadata/variant_list_20200409.xlsx")
+    run_metadata = Path("/metadata/variant_list_20200730.xlsx")
     patient_id, sample_type = sample_folder_name.split("_")
     patient_id = int(patient_id)
 
@@ -35,14 +35,14 @@ def select_sample_variants(sample_folder_name: str) -> pd.DataFrame:
     run_sheet = pd.read_excel(run_metadata, sheet_name=sheet_number)
 
     if "PBMC" in sample_folder_name:
-        # Keep both PBMC variants that are eitehr in t0 or in t1. We will use
+        # Keep both PBMC variants that are either in t0 or in t1. We will use
         # `drop_duplicates` below for variants that are both present.
         constraint = run_sheet["Patient ID"] == patient_id
     else:
         constraint = run_sheet["Sample ID"] == sample_folder_name
     run_variants = run_sheet[constraint]
 
-    columns_to_keep = ["Gene", "Coding Change", "Genomic Position"]
+    columns_to_keep = ["Gene", "Coding Change", "Genomic Position", "Mutation Class"]
     return run_variants[columns_to_keep].drop_duplicates().copy()
 
 

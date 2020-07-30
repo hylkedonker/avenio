@@ -1,6 +1,6 @@
 from collections import defaultdict
 import json
-from typing import Tuple
+from typing import Iterable, Tuple
 
 import pandas as pd
 
@@ -18,7 +18,7 @@ def dict_sum(a: defaultdict, b: dict, inplace: bool = True) -> defaultdict:
     return result
 
 
-def as_series(distribution: dict, fill_upto_incl=-1) -> pd.Series:
+def dict_as_series(distribution: dict, fill_upto_incl=-1) -> pd.Series:
     """
     Turn count dictionary into series.
     """
@@ -35,20 +35,22 @@ def as_series(distribution: dict, fill_upto_incl=-1) -> pd.Series:
     return s
 
 
-def as_dataframe(gene_counts: defaultdict, max_fragment_size: int) -> pd.DataFrame:
+def dict_to_data_frame(
+    gene_counts: defaultdict, max_fragment_size: int
+) -> pd.DataFrame:
     """
     Combine all distributions in `gene_counts` into a data frame.
     """
     genes = sorted(gene_counts.keys())
     df = pd.DataFrame(index=range(1, max_fragment_size + 1), columns=genes)
     for gene in genes:
-        df[gene] = as_series(gene_counts[gene], fill_upto_incl=max_fragment_size)
+        df[gene] = dict_as_series(gene_counts[gene], fill_upto_incl=max_fragment_size)
     return df
 
 
-def load_json_as_dataframe(filename: str):
+def _json_to_data_frame(filename: str):
     """
-    Load single JSON file into pandas dataframe/
+    Load single JSON file into pandas dataframe.
     """
     normal_counts = defaultdict(lambda: defaultdict(int))
     variant_counts = defaultdict(lambda: defaultdict(int))
@@ -68,12 +70,12 @@ def load_json_as_dataframe(filename: str):
                     max(variant_counts[gene].keys()),
                     max_fragment_size,
                 )
-    normals = as_dataframe(normal_counts, max_fragment_size)
-    variants = as_dataframe(variant_counts, max_fragment_size)
+    normals = dict_to_data_frame(normal_counts, max_fragment_size)
+    variants = dict_to_data_frame(variant_counts, max_fragment_size)
     return normals, variants
 
 
-def determine_dimensions(data_frames):
+def compute_domain(data_frames):
     """
     Determine the largest indices (fragment size) and columns (gene names).
     """
@@ -85,26 +87,34 @@ def determine_dimensions(data_frames):
     return range(1, max_fragment_size + 1), sorted(genes)
 
 
-def pool_counts_to_dataframe(json_files) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def pool_counts_to_data_frame(json_files) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Aggregate count statistics from list of json files.
     """
-    # Index the genes and the maximum fragment size range.
-    data_frames = []
-    for filename in json_files:
-        dfs = load_json_as_dataframe(filename)
-        data_frames.extend(dfs)
+    normals, variants = load_samples_as_data_frame(json_files)
+    return normals.groupby("length (bp)").sum(), variants.groupby("length (bp)").sum()
 
-    indices, columns = determine_dimensions(data_frames)
 
+def load_samples_as_data_frame(filenames: Iterable[str]) -> pd.DataFrame:
+    """
+    Concatenate sample data frames in one monolithic multi-index data frame.
+    """
+    # Cache data frames per sample.
+    normal_variant_pairs = [_json_to_data_frame(f) for f in filenames]
+    normals, variants = zip(*normal_variant_pairs)
+    # Determine domain of the samples.
+    indices, columns = compute_domain(tuple(normals) + tuple(variants))
     kwargs = {"index": indices, "columns": columns, "dtype": int}
-    result_normal = pd.DataFrame(0, **kwargs)
-    result_variant = pd.DataFrame(0, **kwargs)
-    for i in range(len(data_frames) // 2):
-        result_normal += data_frames[2 * i]
-        result_variant += data_frames[2 * i + 1]
 
-    return result_normal.copy(), result_variant.copy()
+    def _concatenate(data_frames):
+        items = [pd.DataFrame(0, **kwargs).add(df, fill_value=0) for df in data_frames]
+
+        names = [f.split("/")[-1].split(".")[0] for f in filenames]
+        panel = pd.concat(items, keys=names, axis=0)
+        panel.index.set_names(["sample", "length (bp)"], inplace=True)
+        return panel
+
+    return _concatenate(normals), _concatenate(variants)
 
 
 def to_cumulative(counts):
