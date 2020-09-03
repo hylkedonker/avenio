@@ -1,6 +1,6 @@
 from numpy import exp
 
-from utils import to_cumulative
+from fragment_count.utils import to_cumulative
 
 
 def kolmogorov_smirnov(normal_counts, variant_counts):

@@ -1,6 +1,8 @@
 from matplotlib import pyplot as plt
 from scipy.signal import find_peaks
 
+from fragment_count.utils import filter_no_fragments, pool_timepoints, safe_normalise
+
 
 def plot_distribution(seq, label=None, with_peaks=True):
     fragment_window = [80, 400]
@@ -20,6 +22,31 @@ def plot_distribution(seq, label=None, with_peaks=True):
             color="C1",
             zorder=2,
         )
+    plt.xlim(fragment_window)
+
+
+def plot_distribution_errorbar(seq, label=None, with_peaks=True):
+    """
+    Plot distribution with patient variability.
+    """
+    # Combine baseline and follow-up.
+    df = pool_timepoints(seq)
+    # Remove patients with no fragments at both base line and follow up.
+    df = filter_no_fragments(df)
+    # Normalise as probability.
+    distributions = df.groupby("Patient ID").apply(safe_normalise)
+
+    mean = distributions.groupby("length (bp)").mean()
+    std = distributions.groupby("length (bp)").std()
+    fragment_window = [80, 400]
+    print("integral", mean.sum())
+
+    n = distributions.index.get_level_values("Patient ID").nunique()
+    mean.plot(label=label + " (n={})".format(n))
+    upper_bound = mean + std
+    lower_bound = mean - std
+    plt.fill_between(mean.index, upper_bound, lower_bound, alpha=0.25)
+
     plt.xlim(fragment_window)
 
 

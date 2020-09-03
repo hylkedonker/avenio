@@ -108,12 +108,13 @@ def load_samples_as_data_frame(filenames: Iterable[str]) -> pd.DataFrame:
 
     def _concatenate(data_frames):
         items = [pd.DataFrame(0, **kwargs).add(df, fill_value=0) for df in data_frames]
-
         names = [tuple(f.split("/")[-1].split(".")[0].split("_")) for f in filenames]
         panel = pd.concat(
-            items, keys=names, names=["Patient ID", "sample number"], axis=0
+            items,
+            keys=names,
+            names=["Patient ID", "sample number", "length (bp)"],
+            axis=0,
         )
-        panel.index.set_names(["sample", "length (bp)"], inplace=True)
         return panel
 
     return _concatenate(normals), _concatenate(variants)
@@ -123,3 +124,39 @@ def to_cumulative(counts):
     """ Turn count array into cumulative distribution. """
     distribution = counts / sum(counts)
     return distribution.cumsum()
+
+
+def pool(df):
+    """ Pool over genes, patients, and samples. """
+    return df.sum(axis=1).groupby("length (bp)").sum().astype(int)
+
+
+def pool_timepoints(data_frame):
+    """ Combine baseline and follow up samples. """
+    return data_frame.groupby(["Patient ID", "length (bp)"]).sum()
+
+
+def safe_normalise(x):
+    """ Turn counts into normalised distribution. """
+    Z = x.sum()
+    if Z != 0.0:
+        return x / Z
+    return x
+
+
+def filter_no_fragments(data_frame):
+    """ Remove patients with zero fragment count, over all genes. """
+    clearance = data_frame.groupby("Patient ID").sum() == 0
+    return data_frame[
+        ~clearance[data_frame.index.get_level_values("Patient ID")].values
+    ]
+
+
+def pool_and_normalise(data_frame):
+    """ Pool over time point and genes. """
+    return (
+        pool_timepoints(data_frame)
+        .sum(axis=1)
+        .groupby("Patient ID")
+        .apply(safe_normalise)
+    )
