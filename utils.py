@@ -174,7 +174,7 @@ def double_cross_validate(m_inner: int = 5, n_outer: int = 5, verbose=True) -> C
                     estimator = pipeline.fit(X_train, y_train)
 
                 X_test, y_test = X.iloc[test], y.iloc[test]
-                predictions = function(estimator, X_test, y_test)
+                predictions = function(estimator, X_test, y_test, *args, **kwargs)
                 if isinstance(predictions, dict):
                     for k, v in predictions.items():
                         outputs[k].append(v)

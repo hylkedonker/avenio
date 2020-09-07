@@ -36,6 +36,33 @@ def collect_fragment_sizes(
     return base_counts
 
 
+def collect_fragment_four_mers(
+    bam_file, chromosome: str, start_position: int
+) -> Dict[str, List[float]]:
+    """
+    Pool fragment sizes per base at given position.
+    """
+    four_mer_counts: Dict[str, List[float]] = defaultdict(list)
+
+    for pile in bam_file.pileup(
+        contig=chromosome, start=start_position, truncate=False, ignore_overlaps=True
+    ):
+        # We are only interested in the bases on `start_pos`.
+        if pile.pos != start_position - 1:
+            # print("no pos match")
+            continue
+
+        for read in pile.pileups:
+            if read.is_del or read.is_refskip:
+                continue
+
+            base = read.alignment.query_sequence[read.query_position]
+            four_mer = read.alignment.query_sequence[:4]
+            four_mer_counts[base].append(four_mer)
+
+    return four_mer_counts
+
+
 def compute_variant_fragment_size_counts(
     run_folder: Path, output_folder: Path, variant_metadata: pd.DataFrame
 ):
@@ -78,23 +105,15 @@ def compute_variant_fragment_size_counts(
             "chromosome": chromosome,
             "position": position,
             "gene": pos["Gene"],
-            "fragment_size_counts": {"A": {}, "C": {}, "T": {}, "G": {}},
+            "fragment_size_counts": {},
         }
-
         fragment_sizes = collect_fragment_sizes(alignments, chromosome, int(position))
-        fragment_counts = {len(v): k for k, v in fragment_sizes.items()}
-        # Wild type is most abundant.
-        variant_item["nucleotide_normal"] = fragment_counts[max(fragment_counts.keys())]
-        # The other bases are considered variants.
-        variant_item["nucleotide_variants"] = [
-            v
-            for k, v in fragment_counts.items()
-            if k != 0 and v != variant_item["nucleotide_normal"]
-        ]
-        for base in fragment_sizes.keys():
-            # Compute the number of occurences of each fragment size.
-            counts = Counter(fragment_sizes[base])
-            variant_item["fragment_size_counts"][base] = counts
+        # TODO: Add four mers to the collection.
+
+        wild_type, variants = _get_wild_type_and_variant_nucleotides(fragment_sizes)
+        variant_item["nucleotide_normal"] = wild_type
+        variant_item["nucleotide_variants"] = variants
+        variant_item["fragment_size_counts"] = count_fragments(fragment_sizes)
 
         output_json["variants"].append(variant_item)
 
@@ -104,6 +123,28 @@ def compute_variant_fragment_size_counts(
         logging.debug(
             f"Wrote fragment size counts for {folder_name} to disk:\n {output_file}"
         )
+
+
+def count_fragments(fragment_items) -> dict:
+    """
+    Compute the number of occurences of each fragment item (e.g., size, or motif).
+    """
+    counts_per_base = {}
+    for base in fragment_items.keys():
+        counts = Counter(fragment_items[base])
+        counts_per_base[base] = counts
+
+    return counts_per_base
+
+
+def _get_wild_type_and_variant_nucleotides(fragment_items) -> Tuple[str, List[str]]:
+    """ Wild type is most abundant, other bases are variants. """
+    base_counts = {len(v): base for base, v in fragment_items.items()}
+    normal = base_counts[max(base_counts.keys())]
+    variants = [
+        base for occurs, base in base_counts.items() if occurs != 0 and base != normal
+    ]
+    return normal, variants
 
 
 def pool_variant_fragment_sizes(

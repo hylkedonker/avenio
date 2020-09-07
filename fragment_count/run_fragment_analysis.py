@@ -8,7 +8,7 @@ import pandas as pd
 
 from analysis import compute_variant_fragment_size_counts
 
-output_folder = Path("/package/output/")
+output_folder = Path("/package/output2/")
 log_folder = Path("/package/log")
 
 # Set up logging to a file.
