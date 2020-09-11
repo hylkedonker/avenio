@@ -6,9 +6,16 @@ import sys
 
 import pandas as pd
 
-from analysis import compute_variant_fragment_size_counts
+from analysis import compute_variant_fragment_statistics
 
+# Specify and create output directories.
 output_folder = Path("/package/output2/")
+output_pbmc = output_folder / "pbmc_plus_plasma"
+output_pbmc.mkdir(parents=True, exist_ok=True)
+output_tumor = output_folder / "tumor_derived"
+output_tumor.mkdir(parents=True, exist_ok=True)
+output_chip = output_folder / "chip"
+output_chip.mkdir(parents=True, exist_ok=True)
 log_folder = Path("/package/log")
 
 # Set up logging to a file.
@@ -70,22 +77,18 @@ for sample in glob.glob(str(path_pattern)):
     logging.info(f"Computing fragment counts for {sample_folder.name}")
 
     if sample_suffix == "PBMC":
+
         pbmc_metadata = select_sample_variants(sample_folder.name)
-        compute_variant_fragment_size_counts(
-            sample_folder,
-            output_folder / "pbmc_plus_plasma",
-            variant_metadata=pbmc_metadata,
+        compute_variant_fragment_statistics(
+            sample_folder, output_pbmc, variant_metadata=pbmc_metadata
         )
     else:
         tumor_metadata, chip_metadata = select_sample_variants(sample_folder.name)
-
-        compute_variant_fragment_size_counts(
-            sample_folder,
-            output_folder / "tumor_derived",
-            variant_metadata=tumor_metadata,
+        compute_variant_fragment_statistics(
+            sample_folder, output_tumor, variant_metadata=tumor_metadata
         )
-        compute_variant_fragment_size_counts(
-            sample_folder, output_folder / "chip", variant_metadata=chip_metadata
+        compute_variant_fragment_statistics(
+            sample_folder, output_chip, variant_metadata=chip_metadata
         )
 
     # run_metadata

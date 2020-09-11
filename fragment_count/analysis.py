@@ -1,69 +1,84 @@
 from collections import Counter, defaultdict
+from functools import wraps
 import glob
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Callable, List, Tuple
 
 import pandas as pd
 import pysam
 
 
-def collect_fragment_sizes(
-    bam_file, chromosome: str, start_position: int
-) -> Dict[str, List[float]]:
+def from_pileup(function_object: Callable[..., Tuple[str, Any]]):
     """
-    Pool fragment sizes per base at given position.
+    Wrapper that iterates through the reads piling up at a specific genomic position.
     """
-    base_counts: Dict[str, List[float]] = defaultdict(list)
 
-    for pile in bam_file.pileup(
-        contig=chromosome, start=start_position, truncate=False, ignore_overlaps=True
-    ):
-        # We are only interested in the bases on `start_pos`.
-        if pile.pos != start_position - 1:
-            # print("no pos match")
-            continue
-
-        for read in pile.pileups:
-            if read.is_del or read.is_refskip:
+    @wraps(function_object)
+    def wrapped_read_collection(bam_file, chromosome: str, start_position: int):
+        """
+        Iterate through reads at genomic position, and collect key-value pairs.
+        """
+        # The items (returned as Key-value pairs) are collected in this container.
+        item_container = defaultdict(list)
+        for pile in bam_file.pileup(
+            contig=chromosome,
+            start=start_position,
+            truncate=False,
+            ignore_overlaps=True,
+        ):
+            # We are only interested in the bases on `start_pos`.
+            if pile.pos != start_position - 1:
+                # print("no pos match")
                 continue
 
-            base = read.alignment.query_sequence[read.query_position]
-            fragment_length = abs(read.alignment.template_length)
-            base_counts[base].append(fragment_length)
+            for read in pile.pileups:
+                if read.is_del or read.is_refskip:
+                    continue
+                item_name, item_value = function_object(read)
+                item_container[item_name].append(item_value)
 
-    return base_counts
+        return item_container
+
+    return wrapped_read_collection
 
 
-def collect_fragment_four_mers(
-    bam_file, chromosome: str, start_position: int
-) -> Dict[str, List[float]]:
+@from_pileup
+def collect_fragment_sizes(read) -> Tuple[str, int]:
     """
-    Pool fragment sizes per base at given position.
+    Extract fragment size from read.
     """
-    four_mer_counts: Dict[str, List[float]] = defaultdict(list)
-
-    for pile in bam_file.pileup(
-        contig=chromosome, start=start_position, truncate=False, ignore_overlaps=True
-    ):
-        # We are only interested in the bases on `start_pos`.
-        if pile.pos != start_position - 1:
-            # print("no pos match")
-            continue
-
-        for read in pile.pileups:
-            if read.is_del or read.is_refskip:
-                continue
-
-            base = read.alignment.query_sequence[read.query_position]
-            four_mer = read.alignment.query_sequence[:4]
-            four_mer_counts[base].append(four_mer)
-
-    return four_mer_counts
+    base = read.alignment.query_sequence[read.query_position]
+    fragment_length = abs(read.alignment.template_length)
+    return base, fragment_length
 
 
-def compute_variant_fragment_size_counts(
+@from_pileup
+def collect_fragment_watson_fourmer(read) -> Tuple[str, str]:
+    """
+    Extract fragment fourmer from 5' end motif Watson strand.
+    """
+    base = read.alignment.query_sequence[read.query_position]
+    # Leading fourmer.
+    four_mer = read.alignment.query_sequence[:4]
+    assert four_mer.isupper()
+    return base, four_mer
+
+
+@from_pileup
+def collect_fragment_crick_fourmer(read) -> Tuple[str, str]:
+    """
+    Extract fragment fourmer from 5' end motif Crick strand.
+    """
+    base = read.alignment.query_sequence[read.query_position]
+    # Trailing fourmer, mirrored to obtain Crick strand.
+    four_mer = read.alignment.query_sequence[-4:]
+    assert four_mer.isupper()
+    return base, four_mer[::-1]
+
+
+def compute_variant_fragment_statistics(
     run_folder: Path, output_folder: Path, variant_metadata: pd.DataFrame
 ):
     """
@@ -100,6 +115,7 @@ def compute_variant_fragment_size_counts(
         if pos["Mutation Class"] in ("Indel", "CNV"):
             output_json["unparsable_variants"].append(tuple(pos))
             continue
+        position = int(position)
 
         variant_item = {
             "chromosome": chromosome,
@@ -107,13 +123,20 @@ def compute_variant_fragment_size_counts(
             "gene": pos["Gene"],
             "fragment_size_counts": {},
         }
-        fragment_sizes = collect_fragment_sizes(alignments, chromosome, int(position))
-        # TODO: Add four mers to the collection.
+        fragment_sizes = collect_fragment_sizes(alignments, chromosome, position)
+        watson_fourmers = collect_fragment_watson_fourmer(
+            alignments, chromosome, position
+        )
+        crick_fourmers = collect_fragment_crick_fourmer(
+            alignments, chromosome, position
+        )
 
         wild_type, variants = _get_wild_type_and_variant_nucleotides(fragment_sizes)
         variant_item["nucleotide_normal"] = wild_type
         variant_item["nucleotide_variants"] = variants
         variant_item["fragment_size_counts"] = count_fragments(fragment_sizes)
+        variant_item["watson_fourmer_counts"] = count_fragments(watson_fourmers)
+        variant_item["crick_fourmer_counts"] = count_fragments(crick_fourmers)
 
         output_json["variants"].append(variant_item)
 
