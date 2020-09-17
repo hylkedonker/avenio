@@ -55,14 +55,32 @@ def dict_to_frame(gene_counts: defaultdict, index=None) -> pd.DataFrame:
     """
     Combine all distributions in `gene_counts` into a data frame.
     """
+    index_cache = set()
+    gene_series = {}
     genes = sorted(gene_counts.keys())
-    df = pd.DataFrame(columns=genes)
-    if index is not None:
-        df.set_index(index)
-
     for gene in genes:
-        df[gene] = dict_as_series(gene_counts[gene], index)
-    return df.fillna(0).astype(int)
+        s = dict_as_series(gene_counts[gene], index)
+        gene_series[gene] = s
+        index_cache = index_cache.union(set(s.index))
+
+    reindex = list(index_cache)
+    reindex.sort()
+
+    if index is not None and len(index) > len(reindex):
+        reindex = index
+
+    df = pd.DataFrame(gene_series, index=reindex, columns=genes).fillna(0).astype(int)
+
+    is_digit = map(
+        lambda x: True if isinstance(x, str) and x.isdigit() else False, df.index
+    )
+
+    if all(is_digit):
+        reindex = list(map(int, df.index))
+        df.index = reindex
+        return df.sort_index()
+
+    return df
 
 
 def json_to_frame(filename: str, field_name: str):
@@ -75,25 +93,30 @@ def json_to_frame(filename: str, field_name: str):
     with open(filename) as file_object:
         fragments = json.load(file_object)
         for var in fragments["variants"]:
+            normal_base = var["nucleotide_normal"]
+            gene = var["gene"]
+
             # Combine Watson and Crick fourmers into single field.
             if field_name == "fourmer_counts":
                 counts = defaultdict(lambda: defaultdict(int))
                 counts = dict_sum_sum(counts, var["watson_fourmer_counts"])
                 counts = dict_sum_sum(counts, var["crick_fourmer_counts"])
-                raise
+                # raise
             else:
                 counts = var[field_name]
-            normal_base = var["nucleotide_normal"]
-            gene = var["gene"]
             normal_counts[gene] = dict_sum(normal_counts[gene], counts[normal_base])
             for base in var["nucleotide_variants"]:
                 variant_counts[gene] = dict_sum(variant_counts[gene], counts[base])
 
-    import ipdb
-
-    ipdb.set_trace()
-    normals = dict_to_frame(normal_counts)
-    variants = dict_to_frame(variant_counts)
+    index = None
+    if field_name in (
+        "fourmer_counts",
+        "watson_fourmer_counts",
+        "crick_fourmer_counts",
+    ):
+        index = pd.Series(range(4 ** 4)).apply(int_to_fourmer)
+    normals = dict_to_frame(normal_counts, index)
+    variants = dict_to_frame(variant_counts, index)
     return normals, variants
 
 
@@ -127,7 +150,8 @@ def compute_domain(data_frames, field_name: str):
     elif field_name == "fragment_size_counts":
         max_fragment_size = 1
         for df in data_frames:
-            max_fragment_size = max(max_fragment_size, max(df.index.astype(int)))
+            if not df.empty:
+                max_fragment_size = max(max_fragment_size, max(df.index.astype(int)))
             genes = genes.union(set(df.columns))
         return range(1, max_fragment_size + 1), sorted(genes)
     raise NotImplementedError
@@ -176,14 +200,24 @@ def to_cumulative(counts):
     return distribution.cumsum()
 
 
+def _get_principle_axis(frame):
+    """ Determine which is the primary column of interest. """
+    principle_axis = "length (bp)"
+    if "4mer" in frame.reset_index().columns:
+        principle_axis = "4mer"
+    return principle_axis
+
+
 def pool(df):
     """ Pool over genes, patients, and samples. """
-    return df.sum(axis=1).groupby("length (bp)").sum().astype(int)
+    principle_axis = _get_principle_axis(df)
+    return df.sum(axis=1).groupby(principle_axis).sum().astype(int)
 
 
 def pool_timepoints(data_frame):
     """ Combine baseline and follow up samples. """
-    return data_frame.groupby(["Patient ID", "length (bp)"]).sum()
+    principle_axis = _get_principle_axis(data_frame)
+    return data_frame.groupby(["Patient ID", principle_axis]).sum()
 
 
 def safe_normalise(x):
