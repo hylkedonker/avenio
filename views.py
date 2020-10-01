@@ -33,6 +33,72 @@ matplotlib.rc("axes", labelsize="xx-large", titlesize="xx-large")
 matplotlib.rc("legend", fontsize="x-large")
 
 
+def _confusion_matrix_plot(metrics_mean, metrics_std, class_name, ax, labels):
+    confusion_matrix_mean = pd.DataFrame(
+        metrics_mean[f"{class_name}__confusion_matrix"], index=labels, columns=labels
+    )
+    confusion_matrix_std = pd.DataFrame(
+        metrics_std[f"{class_name}__confusion_matrix"], index=labels, columns=labels
+    )
+    c_annot = confusion_matrix_mean.applymap(
+        lambda x: "{:0.2f}$\pm$".format(x)
+    ) + confusion_matrix_std.applymap(lambda x: "{:0.2f}".format(x))
+    sns.heatmap(
+        confusion_matrix_mean,
+        annot=c_annot,
+        fmt="",
+        cmap=plt.cm.Blues,
+        ax=ax,
+        cbar=False,
+    )
+    #     ax.set_yticks(rotation=0)
+    ax.set_title(
+        r"Accuracy {:0.2f}$\pm${:0.2f}".format(
+            metrics_mean[f"{class_name}__accuracy"],
+            metrics_std[f"{class_name}__accuracy"],
+        )
+    )
+    ax.set_ylabel("Actual")
+    ax.set_xlabel("Predicted")
+    return ax
+
+
+def plot_roc_curve(m_mean, m_std, class_name, labels=None):
+    fpr, tpr = m_mean[f"{class_name}__fprs"], m_mean[f"{class_name}__tprs"]
+    fpr_std, tpr_std = m_std[f"{class_name}__fprs"], m_std[f"{class_name}__tprs"]
+    tprs_upper = np.minimum(tpr + tpr_std, 1)
+    tprs_lower = np.maximum(tpr - tpr_std, 0)
+
+    # fig, ax = plt.subplots()
+    ax = plt.gca()
+    ax.set(
+        xlim=[-0.05, 1.05],
+        ylim=[-0.05, 1.05],
+        title=f"Receiver operating characteristic {class_name}",
+    )
+    ax.plot([0, 1], [0, 1], linestyle="--", lw=2, color="r", alpha=0.8)
+    mean_label = r"Mean ROC (AUC = {:0.2f}$\pm${:0.2f})".format(
+        m_mean[f"{class_name}__roc_auc"], m_std[f"{class_name}__roc_auc"]
+    )
+    print("Accuracy:", m_mean[f"{class_name}__accuracy"])
+    ax.plot(fpr, tpr, label=mean_label, lw=2)
+    ax.fill_between(
+        fpr, tprs_lower, tprs_upper, color="grey", alpha=0.2, label=r"$\pm$ 1 std. dev."
+    )
+    ax.set_xlabel("False positive rate")
+    ax.set_ylabel("True positive rate")
+    ax.legend(frameon=False, loc=2)
+    inset_ax = ax.inset_axes([0.6, 0.15, 0.4, 0.4])
+    if labels is None:
+        label_abbrev = (
+            " ".join(class_name.split()[:-1])
+            .replace("responder", "resp.")
+            .replace("evaluable", "eval.")
+        )
+        labels = ["rest", f"{label_abbrev}"]
+    _confusion_matrix_plot(m_mean, m_std, class_name, inset_ax, labels=labels)
+
+
 def plot_confusion_matrix(
     y_true, y_pred, classes, normalize=False, title=None, cmap=plt.cm.Blues
 ):

@@ -83,6 +83,12 @@ def dict_to_frame(gene_counts: defaultdict, index=None) -> pd.DataFrame:
     return df
 
 
+def complement(strand):
+    translation = {"A": "T", "C": "G", "T": "A", "G": "C"}
+    cstrand = map(lambda x: translation[x], strand)
+    return "".join(cstrand)
+
+
 def json_to_frame(filename: str, field_name: str):
     """
     Load single JSON file into pandas dataframe.
@@ -203,8 +209,9 @@ def to_cumulative(counts):
 def _get_principle_axis(frame):
     """ Determine which is the primary column of interest. """
     principle_axis = "length (bp)"
-    if "4mer" in frame.reset_index().columns:
-        principle_axis = "4mer"
+    potential_columns = [c for c in frame.reset_index().columns if "4mer" in c]
+    if any(potential_columns):
+        principle_axis = potential_columns[0]
     return principle_axis
 
 

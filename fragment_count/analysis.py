@@ -9,6 +9,8 @@ from typing import Any, Callable, List, Tuple
 import pandas as pd
 import pysam
 
+from utils import complement
+
 
 def from_pileup(function_object: Callable[..., Tuple[str, Any]]):
     """
@@ -54,6 +56,44 @@ def collect_fragment_sizes(read) -> Tuple[str, int]:
     return base, fragment_length
 
 
+def collect_fragment_fourmer(bam_file, chromosome: str, start_position: int):
+    # The items (returned as Key-value pairs) are collected in this container.
+    item_container = defaultdict(list)
+    for pile in bam_file.pileup(
+        contig=chromosome, start=start_position, truncate=False, ignore_overlaps=True
+    ):
+        # We are only interested in the bases on `start_pos`.
+        if pile.pos != start_position - 1:
+            # print("no pos match")
+            continue
+
+        for read in pile.pileups:
+            if read.is_del or read.is_refskip:
+                continue
+            import ipdb
+
+            ipdb.set_trace()
+            mate_id = read.alignment.next_reference_id
+            read_mate = bam_file.mate(read.alignment)
+            if read.alignment.reference_start < read_mate.alignment.reference_start:
+                left_read, right_read = read, read_mate
+            else:
+                left_read, right_read = read_mate, read
+
+            assert left_read.alignment.is_read1
+            assert right_read.alignment.is_read2
+            assert left_read.is_head()
+            assert right_read.is_tail()
+
+            base = read.alignment.query_sequence[read.query_position]
+
+            watson_fourmer = left_read.alignment.query_sequence[:4]
+            crick_fourmer = complement(right_read.alignment.query_sequence[-4:])
+            item_container[base].extend([watson_fourmer, crick_fourmer])
+
+    return item_container
+
+
 @from_pileup
 def collect_fragment_watson_fourmer(read) -> Tuple[str, str]:
     """
@@ -75,7 +115,7 @@ def collect_fragment_crick_fourmer(read) -> Tuple[str, str]:
     # Trailing fourmer, mirrored to obtain Crick strand.
     four_mer = read.alignment.query_sequence[-4:]
     assert four_mer.isupper()
-    return base, four_mer[::-1]
+    return base, complement(four_mer)
 
 
 def compute_variant_fragment_statistics(
@@ -124,6 +164,7 @@ def compute_variant_fragment_statistics(
             "fragment_size_counts": {},
         }
         fragment_sizes = collect_fragment_sizes(alignments, chromosome, position)
+        fourmers = collect_fragment_fourmer(alignments, chromosome, position)
         watson_fourmers = collect_fragment_watson_fourmer(
             alignments, chromosome, position
         )
@@ -137,6 +178,7 @@ def compute_variant_fragment_statistics(
         variant_item["fragment_size_counts"] = count_fragments(fragment_sizes)
         variant_item["watson_fourmer_counts"] = count_fragments(watson_fourmers)
         variant_item["crick_fourmer_counts"] = count_fragments(crick_fourmers)
+        variant_item["fourmer_counts"] = count_fragments(fourmers)
 
         output_json["variants"].append(variant_item)
 

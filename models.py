@@ -380,6 +380,7 @@ class TransformColumnType(BaseEstimator, TransformerMixin):
         """
         Apply the transformation to the selected columns.
         """
+        X = X.copy()
         if isinstance(self.transformation, BaseEstimator):
             X[self.columns_to_transform_] = self.transformation.transform(
                 X[self.columns_to_transform_]
@@ -389,7 +390,7 @@ class TransformColumnType(BaseEstimator, TransformerMixin):
                 self.transformation
             )
 
-        return X.copy()
+        return X
 
 
 class AutoMaxScaler(BaseEstimator, TransformerMixin):

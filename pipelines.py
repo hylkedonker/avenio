@@ -1,4 +1,3 @@
-from pprint import pprint
 from typing import Callable
 
 import pandas as pd
@@ -20,12 +19,7 @@ from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
 from const import clinical_features, get_hyper_param_grid
-from models import (
-    AutoMaxScaler,
-    AutoNumericFilter,
-    SparseFeatureFilter,
-    TransformColumnType,
-)
+from models import AutoMaxScaler, SparseFeatureFilter, TransformColumnType
 
 
 RANDOM_STATE = 1234
@@ -240,23 +234,6 @@ def pipeline_Richard(estimator):
     return Pipeline(steps=steps_Richard)
 
 
-def pipeline_Julian(estimator):
-    """
-    Mutation-only pipeline Julian.
-    """
-    p_Julian = Pipeline(
-        steps=[
-            (
-                "select_columns",
-                FunctionTransformer(select_no_phenotype_columns, validate=False),
-            ),
-            ("filter_rare_mutations", SparseFeatureFilter(top_k_features=6)),
-            ("estimator", estimator),
-        ]
-    )
-    return p_Julian
-
-
 def pipeline_Freeman(estimator):
     """
     Pipeline with clinical + genomic data: Freeman.
@@ -264,21 +241,6 @@ def pipeline_Freeman(estimator):
     steps_Freeman = [
         *clinical_preprocessing_steps(),
         ("normalise_genomic_data", AutoMaxScaler()),
-        ("encode_clinical_categories", clinical_encoder_step()),
-        ("estimator", estimator),
-    ]
-
-    return Pipeline(steps=steps_Freeman)
-
-
-def pipeline_Freeman_filtered(estimator):
-    """
-    Pipeline with clinical + genomic data: Freeman.
-    """
-    steps_Freeman = [
-        *clinical_preprocessing_steps(),
-        ("normalise_genomic_data", AutoMaxScaler()),
-        ("statistical_filter", AutoNumericFilter(filter_method="fpr")),
         ("encode_clinical_categories", clinical_encoder_step()),
         ("estimator", estimator),
     ]
@@ -308,13 +270,6 @@ def pipeline_Donker(estimator):
             ),
         ),
         ("LabelEncoder", OneHotEncoder(handle_unknown="ignore", sparse=False)),
-        # (
-        #     "encode_genomics",
-        #     TransformColumnType(
-        #         column_type="numeric", transformation=genomics_discretiser
-        #     ),
-        # ),
-        # ("encode_clinical_categories", clinical_encoder_step()),
         ("estimator", estimator),
     ]
 
@@ -325,14 +280,7 @@ def pipelines(estimator) -> dict:
     """
     Generate pipelines for a given classifier.
     """
-    d = {
-        "Richard": pipeline_Richard(estimator),
-        "Bonferroni": pipeline_Freeman_filtered(estimator),
-        # "Julian": pipeline_Julian(estimator),
-        "Freeman": pipeline_Freeman(estimator),
-        # "Nikolay": pipeline_Nikolay(estimator),
-        # "Pyotr": pipeline_Pyotr(estimator),
-    }
+    d = {"Richard": pipeline_Richard(estimator), "Donker": pipeline_Donker(estimator)}
 
     return d
 
