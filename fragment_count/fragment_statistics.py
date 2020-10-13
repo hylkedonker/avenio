@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 import logging
-from typing import DefaultDict
+from typing import DefaultDict, List, Tuple
 
 import pysam
 
@@ -28,6 +28,8 @@ class NucleotideStatistics(NucleotideCounts):
     """
 
     fourmer: DefaultDict[str, list]
+    wild_type_base: str
+    variant_bases: List[str]
 
 
 class FragmentStatistics:
@@ -44,6 +46,19 @@ class FragmentStatistics:
         logging.debug(f"Building index for {bam_file}.")
         self.read_index = pysam.IndexedReads(self.alignments, multiple_iterators=True)
         self.read_index.build()
+
+    def _determine_wild_type_variant_bases(
+        self, fragment_items
+    ) -> Tuple[str, List[str]]:
+        """ Wild type is most abundant, other bases are variants. """
+        base_counts = {len(v): base for base, v in fragment_items.items()}
+        normal = base_counts[max(base_counts.keys())]
+        variants = [
+            base
+            for occurs, base in base_counts.items()
+            if occurs != 0 and base != normal
+        ]
+        return normal, variants
 
     def collect_counts(self, chromosome: str, start_position: int) -> NucleotideCounts:
         """
@@ -121,6 +136,11 @@ class FragmentStatistics:
         all_fourmers = dict_sum(
             counts.watson_fourmer, counts.crick_fourmer, inplace=False
         )
+
+        wild_type, variants = self._determine_wild_type_variant_bases(
+            counts.fragment_length
+        )
+
         NucleotideStatistics(
             fragment_length=count_fragments(counts.fragment_length),
             watson_fourmer=count_fragments(counts.watson_fourmer),
@@ -128,4 +148,6 @@ class FragmentStatistics:
             fourmer=count_fragments(all_fourmers),
             chromosome=chromosome,
             position=start_position,
+            wild_type_base=wild_type,
+            variant_bases=variants,
         )
