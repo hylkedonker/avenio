@@ -70,26 +70,29 @@ def collect_fragment_fourmer(bam_file, chromosome: str, start_position: int):
         for read in pile.pileups:
             if read.is_del or read.is_refskip:
                 continue
-            import ipdb
-
-            ipdb.set_trace()
-            mate_id = read.alignment.next_reference_id
-            read_mate = bam_file.mate(read.alignment)
-            if read.alignment.reference_start < read_mate.alignment.reference_start:
-                left_read, right_read = read, read_mate
-            else:
-                left_read, right_read = read_mate, read
-
-            assert left_read.alignment.is_read1
-            assert right_read.alignment.is_read2
-            assert left_read.is_head()
-            assert right_read.is_tail()
 
             base = read.alignment.query_sequence[read.query_position]
 
-            watson_fourmer = left_read.alignment.query_sequence[:4]
-            crick_fourmer = complement(right_read.alignment.query_sequence[-4:])
+            # Save location for iterator, because jumping to mate may change location of
+            # iterator (see PySam documentation).
+            pointer = bam_file.tell()
+
+            try:
+                read_mate = bam_file.mate(read.alignment)
+            except ValueError:
+                print("No mate for. ", read.alignment.query_name)
+                continue
+
+            if read.alignment.reference_start < read_mate.reference_start:
+                left_read, right_read = read.alignment, read_mate
+            else:
+                left_read, right_read = read_mate, read.alignment
+
+            watson_fourmer = left_read.query_sequence[:4]
+            crick_fourmer = complement(right_read.query_sequence[-4:])
             item_container[base].extend([watson_fourmer, crick_fourmer])
+
+            bam_file.seek(pointer)
 
     return item_container
 
