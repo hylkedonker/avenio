@@ -1,5 +1,6 @@
-from collections import defaultdict
+from collections import defaultdict, Counter
 import json
+from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
 import pandas as pd
@@ -251,3 +252,53 @@ def pool_and_normalise(data_frame):
         .groupby("Patient ID")
         .apply(safe_normalise)
     )
+
+
+def select_sample_variants(
+    sample_folder_name: str,
+    metadata_location=Path("/metadata/variant_list_20200730.xlsx"),
+) -> pd.DataFrame:
+    """ Find variants for this run from the spreadsheet run file. """
+    patient_id, sample_type = sample_folder_name.split("_")
+    patient_id = int(patient_id)
+
+    sheets = pd.read_excel(metadata_location, sheet_name=[1, 2, 3])
+    tumor_sheet = sheets[1]
+    pbmc_plasma_sheet = sheets[2]
+    chip_sheet = sheets[3]
+
+    columns_to_keep = ["Gene", "Coding Change", "Genomic Position", "Mutation Class"]
+    if "PBMC" in sample_folder_name:
+        # Keep PBMC variants from both timepoints. We will use `drop_duplicates` below
+        # for variants that are both present.
+        pbmc_constraint = pbmc_plasma_sheet["Patient ID"] == patient_id
+        return pbmc_plasma_sheet[pbmc_constraint].drop_duplicates().copy()
+
+    tumor_constraint = tumor_sheet["Sample ID"] == sample_folder_name
+    chip_constraint = chip_sheet["Sample ID"] == sample_folder_name
+    # Select the genomic position from the pbmc-plasma sheet, because it is missing in
+    # the chip sheet.
+    tumors = tumor_sheet[tumor_constraint]
+    chips = chip_sheet[chip_constraint].merge(
+        pbmc_plasma_sheet[pbmc_plasma_sheet["Sample ID"] == sample_folder_name],
+        on=["Gene", "Coding Change", "Mutation Class"],
+        how="inner",
+        suffixes=("", "_y"),
+    )
+
+    return (
+        tumors.filter(items=columns_to_keep).drop_duplicates().copy(),
+        chips.filter(items=columns_to_keep).drop_duplicates().copy(),
+    )
+
+
+def count_fragments(fragment_items) -> dict:
+    """
+    Compute the number of occurences of each fragment item (e.g., size, or motif).
+    """
+    counts_per_base = {}
+    for base in fragment_items.keys():
+        counts = Counter(fragment_items[base])
+        counts_per_base[base] = counts
+
+    return counts_per_base

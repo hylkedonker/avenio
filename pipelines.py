@@ -227,7 +227,7 @@ def pipeline_Richard(estimator):
             FunctionTransformer(select_phenotype_columns, validate=False),
         ),
         *clinical_preprocessing_steps(),
-        ("encode_clinical_categories", clinical_encoder_step()),
+        ("LabelEncoder", OneHotEncoder(handle_unknown="ignore", sparse=False)),
         ("estimator", estimator),
     ]
 

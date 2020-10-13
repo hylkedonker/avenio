@@ -1,4 +1,5 @@
 graphviz
+pysam
 html5lib
 ipdb
 matplotlib

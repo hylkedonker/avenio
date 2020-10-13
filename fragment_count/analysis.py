@@ -1,4 +1,4 @@
-from collections import Counter, defaultdict
+from collections import defaultdict
 from functools import wraps
 import glob
 import json
@@ -9,7 +9,7 @@ from typing import Any, Callable, List, Tuple
 import pandas as pd
 import pysam
 
-from utils import complement
+from utils import complement, count_fragments
 
 
 def from_pileup(function_object: Callable[..., Tuple[str, Any]]):
@@ -64,7 +64,6 @@ def collect_fragment_fourmer(bam_file, chromosome: str, start_position: int):
     ):
         # We are only interested in the bases on `start_pos`.
         if pile.pos != start_position - 1:
-            # print("no pos match")
             continue
 
         for read in pile.pileups:
@@ -76,11 +75,11 @@ def collect_fragment_fourmer(bam_file, chromosome: str, start_position: int):
             # Save location for iterator, because jumping to mate may change location of
             # iterator (see PySam documentation).
             pointer = bam_file.tell()
-
+            print(read.alignment.query_name)
             try:
                 read_mate = bam_file.mate(read.alignment)
             except ValueError:
-                print("No mate for. ", read.alignment.query_name)
+                # print("No mate for. ", read.alignment.query_name)
                 continue
 
             if read.alignment.reference_start < read_mate.reference_start:
@@ -93,6 +92,71 @@ def collect_fragment_fourmer(bam_file, chromosome: str, start_position: int):
             item_container[base].extend([watson_fourmer, crick_fourmer])
 
             bam_file.seek(pointer)
+
+    return item_container
+
+
+def cache_pileup_read_names(bam_file, chromosome: str, start_position: int) -> dict:
+    """
+    Collect all read names that overlap the given region.
+    """
+    pileup_cache = {}
+    for pile in bam_file.pileup(
+        contig=chromosome, start=start_position, truncate=False, ignore_overlaps=True
+    ):
+        # We are only interested in the bases on `start_pos`.
+        if pile.pos != start_position - 1:
+            continue
+
+        for read in pile.pileups:
+            if read.is_del or read.is_refskip:
+                continue
+
+            base = read.alignment.query_sequence[read.query_position]
+            pileup_cache[read.alignment.query_name] = base
+
+    return pileup_cache
+
+
+def collect_fragment_fourmer_with_index(
+    bam_file, chromosome: str, start_position: int, read_index
+):
+    # The items (returned as Key-value pairs) are collected in this container.
+    item_container = defaultdict(list)
+
+    # First cache all the names, to prevent corrupting the `read_index`
+    # iterator.
+    pileup_cache = cache_pileup_read_names(bam_file, chromosome, start_position)
+
+    # Collect both ends of the fragment.
+    for query_name, base in pileup_cache.items():
+        fragment_pair = list(read_index.find(query_name))
+        fragment_pair.sort(key=lambda x: x.reference_start)
+
+        if not all(x.reference_name == chromosome for x in fragment_pair):
+            print("One or more reads on wrong chromosome")
+            print("Skipping")
+            continue
+        if len(fragment_pair) > 2:
+            print("More than 2 reads!")
+            print("Skipping")
+            continue
+        if len(fragment_pair) == 1:
+            left_read = right_read = None
+            singleton_read = fragment_pair[0]
+            if singleton_read.is_read1:
+                left_read = singleton_read
+            else:
+                right_read = singleton_read
+        else:
+            left_read, right_read = fragment_pair[:2]
+
+        if left_read:
+            watson_fourmer = left_read.query_sequence[:4]
+            item_container[base].append(watson_fourmer)
+        if right_read:
+            crick_fourmer = complement(right_read.query_sequence[-4:])
+            item_container[base].append(crick_fourmer)
 
     return item_container
 
@@ -138,8 +202,11 @@ def compute_variant_fragment_statistics(
 
     output_file = output_folder / f"{folder_name}.json"
 
-    alignments = pysam.AlignmentFile(bam_file)
     logging.debug(f"Loading {bam_file}.")
+    alignments = pysam.AlignmentFile(bam_file)
+    logging.debug(f"Building index for {bam_file}.")
+    read_index = pysam.IndexedReads(alignments, multiple_iterators=True)
+    read_index.build()
 
     output_json = {
         "time_point": int(suffix) if suffix.isdigit() else suffix,
@@ -168,19 +235,11 @@ def compute_variant_fragment_statistics(
         }
         fragment_sizes = collect_fragment_sizes(alignments, chromosome, position)
         fourmers = collect_fragment_fourmer(alignments, chromosome, position)
-        watson_fourmers = collect_fragment_watson_fourmer(
-            alignments, chromosome, position
-        )
-        crick_fourmers = collect_fragment_crick_fourmer(
-            alignments, chromosome, position
-        )
 
-        wild_type, variants = _get_wild_type_and_variant_nucleotides(fragment_sizes)
+        wild_type, variants = _determine_wild_type_variant_bases(fragment_sizes)
         variant_item["nucleotide_normal"] = wild_type
         variant_item["nucleotide_variants"] = variants
-        variant_item["fragment_size_counts"] = count_fragments(fragment_sizes)
-        variant_item["watson_fourmer_counts"] = count_fragments(watson_fourmers)
-        variant_item["crick_fourmer_counts"] = count_fragments(crick_fourmers)
+        # variant_item["fragment_size_counts"] = count_fragments(fragment_sizes)
         variant_item["fourmer_counts"] = count_fragments(fourmers)
 
         output_json["variants"].append(variant_item)
@@ -193,19 +252,7 @@ def compute_variant_fragment_statistics(
         )
 
 
-def count_fragments(fragment_items) -> dict:
-    """
-    Compute the number of occurences of each fragment item (e.g., size, or motif).
-    """
-    counts_per_base = {}
-    for base in fragment_items.keys():
-        counts = Counter(fragment_items[base])
-        counts_per_base[base] = counts
-
-    return counts_per_base
-
-
-def _get_wild_type_and_variant_nucleotides(fragment_items) -> Tuple[str, List[str]]:
+def _determine_wild_type_variant_bases(fragment_items,) -> Tuple[str, List[str]]:
     """ Wild type is most abundant, other bases are variants. """
     base_counts = {len(v): base for base, v in fragment_items.items()}
     normal = base_counts[max(base_counts.keys())]

@@ -1,6 +1,6 @@
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import CategoricalNB
+from sklearn.naive_bayes import BernoulliNB, CategoricalNB, ComplementNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.svm import SVC
@@ -378,7 +378,9 @@ def get_hyper_param_grid(model) -> dict:
                 f"{prefix}gamma": ["auto", "scale"],
             }
         )
-    elif isinstance(model, CategoricalNB):
-        filter_params.update({f"{prefix}alpha": [0.125, 0.25, 0.5, 1.0, 2.0]})
+    elif isinstance(model, (BernoulliNB, CategoricalNB, ComplementNB)):
+        filter_params.update(
+            {f"{prefix}alpha": [0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0]}
+        )
 
     return filter_params
