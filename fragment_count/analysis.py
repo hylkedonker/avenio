@@ -8,11 +8,9 @@ import pandas as pd
 from fragment_statistics import FragmentStatistics
 
 
-def analyse_run_statistics(
-    run_folder: Path, output_folder: Path, variant_metadata: pd.DataFrame
-):
+def find_avenio_bam(run_folder: Path) -> Path:
     """
-    Analyse fragment statistics of an Avenio run.
+    Find BAM file of AVENIO run.
     """
     folder_name = run_folder.name
     prefix, suffix = folder_name.split("_")
@@ -22,12 +20,25 @@ def analyse_run_statistics(
     bams = glob.glob(str(bam_pattern))
     assert len(bams) == 1
     bam_file = Path(bams[0])
+    return bam_file
 
-    variants = compute_variant_fragment_statistics(bam_file, variant_metadata)
+
+def analyse_run_statistics(
+    fragment_analyser: FragmentStatistics,
+    run_folder: Path,
+    output_folder: Path,
+    variant_metadata: pd.DataFrame,
+):
+    """
+    Analyse fragment statistics of an Avenio run.
+    """
+    folder_name = run_folder.name
+    prefix, suffix = folder_name.split("_")
+
+    variants = fragment_analyser.compile_variant_statistics(variant_metadata)
     output_json = {
         "patient": prefix,
         "time_point": int(suffix) if suffix.isdigit() else suffix,
-        # "unparsable_variants": [],
         "variants": variants,
     }
 
@@ -38,36 +49,6 @@ def analyse_run_statistics(
         logging.debug(
             f"Wrote fragment size counts for {folder_name} to disk:\n {output_file}"
         )
-
-
-def compute_variant_fragment_statistics(
-    bam_file: Path, variant_metadata: pd.DataFrame
-) -> list:
-    """
-    Compute the fragment size counts for each variant, and store on disk.
-    """
-    analyser = FragmentStatistics(bam_file)
-
-    required_columns = ["Gene", "Genomic Position", "Mutation Class"]
-    assert set(required_columns).issubset(set(variant_metadata.columns))
-
-    variant_statistics = []
-    # Go through each variant called by the Avenio platform.
-    for idx, row in variant_metadata.iterrows():
-        chromosome, position = row["Genomic Position"].split(":")
-        logging.debug(f"Analysing variant {chromosome} at {position}.")
-
-        # Skip CNV's and indels.
-        if row["Mutation Class"] in ("Indel", "CNV"):
-            logging.debug("Skipping non-SNV variant")
-            logging.debug(row)
-            continue
-        position = int(position)
-
-        stats = analyser.compute_statistics(chromosome, position)
-        stats["gene"] = row["Gene"]
-        variant_statistics.append(stats)
-    return variant_statistics
 
 
 # def pool_variant_fragment_sizes(

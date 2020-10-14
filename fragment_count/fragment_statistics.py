@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import DefaultDict, List, Tuple, Union
 
+import pandas as pd
 import pysam
 
 from utils import complement, count_fragments, dict_sum
@@ -141,3 +142,29 @@ class FragmentStatistics:
             "wild_type_base": wild_type,
             "variant_bases": variants,
         }
+
+    def compile_variant_statistics(self, variant_metadata: pd.DataFrame) -> list:
+        """
+        Compute the fragment size statistics for each variant in `variant_metadata`.
+        """
+
+        required_columns = ["Gene", "Genomic Position", "Mutation Class"]
+        assert set(required_columns).issubset(set(variant_metadata.columns))
+
+        variant_statistics = []
+        # Go through each variant called by the Avenio platform.
+        for idx, row in variant_metadata.iterrows():
+            chromosome, position = row["Genomic Position"].split(":")
+            logging.debug(f"Analysing variant {chromosome} at {position}.")
+
+            # Skip CNV's and indels.
+            if row["Mutation Class"] in ("Indel", "CNV"):
+                logging.debug("Skipping non-SNV variant")
+                logging.debug(row)
+                continue
+            position = int(position)
+
+            stats = self.compute_statistics(chromosome, position)
+            stats["gene"] = row["Gene"]
+            variant_statistics.append(stats)
+        return variant_statistics

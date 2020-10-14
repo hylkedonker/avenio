@@ -6,11 +6,13 @@ import sys
 
 import pandas as pd
 
-from analysis import compute_variant_fragment_statistics
+from analysis import analyse_run_statistics, find_avenio_bam
+from fragment_statistics import FragmentStatistics
 from utils import select_sample_variants
 
+
 # Specify and create output directories.
-output_folder = Path("/package/output2/")
+output_folder = Path("/package/output3/")
 output_pbmc = output_folder / "pbmc_plus_plasma"
 output_pbmc.mkdir(parents=True, exist_ok=True)
 output_tumor = output_folder / "tumor_derived"
@@ -24,7 +26,7 @@ timestamp = datetime.datetime.now().strftime(r"%Y%m%d_%H%M")
 logfile = log_folder / (Path(sys.argv[1]).name + "__" + timestamp + ".log")
 logging.basicConfig(
     filename=logfile,
-    level=logging.INFO,
+    level=logging.DEBUG,
     format=r"%(asctime)s %(levelname)-8s %(message)s",
     datefmt=r"%Y-%m-%d %H:%M:%S",
 )
@@ -41,19 +43,31 @@ for sample in glob.glob(str(path_pattern)):
         continue
     logging.info(f"Computing fragment counts for {sample_folder.name}")
 
-    if sample_suffix == "PBMC":
+    # Start loading and indexing BAM file.
+    bam_file = find_avenio_bam(sample_folder)
+    fragment_analyser = FragmentStatistics(bam_file)
 
+    if sample_suffix == "PBMC":
         pbmc_metadata = select_sample_variants(sample_folder.name)
-        compute_variant_fragment_statistics(
-            sample_folder, output_pbmc, variant_metadata=pbmc_metadata
+        analyse_run_statistics(
+            fragment_analyser,
+            run_folder=sample_folder,
+            output_folder=output_pbmc,
+            variant_metadata=pbmc_metadata,
         )
     else:
         tumor_metadata, chip_metadata = select_sample_variants(sample_folder.name)
-        compute_variant_fragment_statistics(
-            sample_folder, output_tumor, variant_metadata=tumor_metadata
+        analyse_run_statistics(
+            fragment_analyser,
+            run_folder=sample_folder,
+            output_folder=output_tumor,
+            variant_metadata=tumor_metadata,
         )
-        compute_variant_fragment_statistics(
-            sample_folder, output_chip, variant_metadata=chip_metadata
+        analyse_run_statistics(
+            fragment_analyser,
+            run_folder=sample_folder,
+            output_folder=output_chip,
+            variant_metadata=chip_metadata,
         )
 
     # run_metadata
