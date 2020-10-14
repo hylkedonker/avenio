@@ -4,15 +4,13 @@ import logging
 from pathlib import Path
 import sys
 
-import pandas as pd
-
 from analysis import analyse_run_statistics, find_avenio_bam
 from fragment_statistics import FragmentStatistics
 from utils import select_sample_variants
 
 
 # Specify and create output directories.
-output_folder = Path("/package/output3/")
+output_folder = Path("/package/output/")
 output_pbmc = output_folder / "pbmc_plus_plasma"
 output_pbmc.mkdir(parents=True, exist_ok=True)
 output_tumor = output_folder / "tumor_derived"
@@ -26,7 +24,7 @@ timestamp = datetime.datetime.now().strftime(r"%Y%m%d_%H%M")
 logfile = log_folder / (Path(sys.argv[1]).name + "__" + timestamp + ".log")
 logging.basicConfig(
     filename=logfile,
-    level=logging.DEBUG,
+    level=logging.INFO,
     format=r"%(asctime)s %(levelname)-8s %(message)s",
     datefmt=r"%Y-%m-%d %H:%M:%S",
 )
