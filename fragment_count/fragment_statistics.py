@@ -1,7 +1,8 @@
 from collections import defaultdict
 from dataclasses import dataclass
 import logging
-from typing import DefaultDict, List, Tuple
+from pathlib import Path
+from typing import DefaultDict, List, Tuple, Union
 
 import pysam
 
@@ -21,23 +22,12 @@ class NucleotideCounts:
     position: int
 
 
-@dataclass
-class NucleotideStatistics(NucleotideCounts):
-    """
-    Fragment statistics per nucleotide.
-    """
-
-    fourmer: DefaultDict[str, list]
-    wild_type_base: str
-    variant_bases: List[str]
-
-
 class FragmentStatistics:
     """
     Compute fragment statistics for given BAM file.
     """
 
-    def __init__(self, bam_file: str):
+    def __init__(self, bam_file: Union[str, Path]):
         """
         Load alignment file and build index.
         """
@@ -111,7 +101,7 @@ class FragmentStatistics:
             if len(fragment_pair) == 1:
                 left_read = right_read = None
                 singleton_read = fragment_pair[0]
-                if singleton_read.is_read1:
+                if singleton_read.pos < singleton_read.next_reference_start:
                     left_read = singleton_read
                 else:
                     right_read = singleton_read
@@ -141,13 +131,13 @@ class FragmentStatistics:
             counts.fragment_length
         )
 
-        NucleotideStatistics(
-            fragment_length=count_fragments(counts.fragment_length),
-            watson_fourmer=count_fragments(counts.watson_fourmer),
-            crick_fourmer=count_fragments(counts.crick_fourmer),
-            fourmer=count_fragments(all_fourmers),
-            chromosome=chromosome,
-            position=start_position,
-            wild_type_base=wild_type,
-            variant_bases=variants,
-        )
+        return {
+            "fragment_length": count_fragments(counts.fragment_length),
+            "watson_fourmer": count_fragments(counts.watson_fourmer),
+            "crick_fourmer": count_fragments(counts.crick_fourmer),
+            "fourmer": count_fragments(all_fourmers),
+            "chromosome": chromosome,
+            "position": start_position,
+            "wild_type_base": wild_type,
+            "variant_bases": variants,
+        }
