@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+import numpy as np
 from scipy.signal import find_peaks
 
 from fragment_count.utils import filter_no_fragments, pool_timepoints, safe_normalise
@@ -48,6 +49,36 @@ def plot_distribution_errorbar(seq, label=None, with_peaks=True):
     plt.fill_between(mean.index, upper_bound, lower_bound, alpha=0.25)
 
     plt.xlim(fragment_window)
+
+
+def plot_motif(motifs, wild_type_frequency, variant_frequency, ax=None):
+    """
+    Make bar plot comparison between wild type frequencies and variant frequencies.
+    """
+    if ax is None:
+        plt.rc("font", family="serif")
+        plt.figure(figsize=(4, 3))
+        ax = plt.gca()
+
+    width = 0.25
+    x = np.arange(len(motifs))
+    ax.bar(
+        x - width / 2,
+        wild_type_frequency,
+        width,
+        color="C0",
+        alpha=0.75,
+        label="wild-type",
+    )
+    ax.bar(
+        x + width / 2, variant_frequency, width, color="C1", alpha=0.75, label="variant"
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(motifs)
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("Motif")
+
+    plt.legend(frameon=False)
 
 
 def plot_distribution_comparison(

@@ -37,6 +37,8 @@ def get_categorical_columns(
         except ValueError:
             categorical_columns.append(column)
             continue
+        except TypeError:
+            pass
 
         # If it is numeric, but lots of non-zero values are identical, consider it
         # categorical.

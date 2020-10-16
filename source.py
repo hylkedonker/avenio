@@ -1,10 +1,11 @@
-from typing import Tuple
+from glob import glob
+from typing import Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
 from utils import get_categorical_columns
-
+from fragment_count.utils import load_samples_as_frame
 
 RANDOM_STATE = 1234
 np.random.seed(RANDOM_STATE)
@@ -115,3 +116,40 @@ def read_preprocessed_data(filename: str, split_label=True) -> Tuple[pd.DataFram
         return (X, y)
 
     return (X,)
+
+
+def load_fragment_statistics(
+    group_by="response_grouped",
+    statistic: Literal[
+        "fragment_length", "fourmer", "watson_fourmer", "crick_fourmer"
+    ] = "fragment_length",
+    sample_type: Literal["tumor_derived", "chip", "pbmc_plus_plasma"] = "tumor_derived",
+    time_point: Optional[Literal["0", "1"]] = None,
+):
+    """
+    Load fragment statistics, seperating by clinical variable `group_by`.
+    """
+    _, clinical_data = load_avenio_files()
+
+    assert group_by in clinical_data.columns
+    clinical_groups = {}
+    for group in clinical_data[group_by].unique():
+        patients = clinical_data[group_by] == group
+
+        time_point_suffix = "*"
+        if time_point is not None:
+            time_point_suffix = f"_{time_point}"
+
+        sample_json = []
+        # Collect all patient samples.
+        for patient_id in clinical_data[patients].index:
+            sample_json += glob(
+                f"fragment_count/output/{sample_type}/"
+                f"{patient_id}{time_point_suffix}.json"
+            )
+
+        clinical_groups[group] = load_samples_as_frame(
+            sample_json, field_name=statistic
+        )
+
+    return clinical_groups

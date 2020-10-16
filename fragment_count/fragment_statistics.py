@@ -96,6 +96,8 @@ class FragmentStatistics:
                     f"One or more reads ({query_name}) on wrong chromosome (not on f{chromosome}). Skipping"
                 )
                 continue
+
+            # Determine ordering of read pair wrt reference genome.
             if len(fragment_pair) > 2:
                 logging.warning(f"More than 2 reads for {query_name}. Skipping")
                 continue
@@ -109,9 +111,11 @@ class FragmentStatistics:
             else:
                 left_read, right_read = fragment_pair[:2]
 
+            # Extract fourmer.
             if left_read:
                 watson_fourmer = left_read.query_sequence[:4]
                 counts.watson_fourmer[base].append(watson_fourmer)
+            # Take complement, see Fig. 1 Jiang et al., Cancer Discovery 10, 665 ('20).
             if right_read:
                 crick_fourmer = complement(right_read.query_sequence[-4:])
                 counts.crick_fourmer[base].append(crick_fourmer)

@@ -30,7 +30,7 @@ def dict_sum_sum(
     else:
         result = a
 
-    for base in set(a.keys()).union(b.keys()):
+    for base in b.keys():
         result[base] = dict_sum(defaultdict(int, a[base]), b[base], inplace)
     return result
 
@@ -100,27 +100,22 @@ def json_to_frame(filename: str, field_name: str):
     with open(filename) as file_object:
         fragments = json.load(file_object)
         for var in fragments["variants"]:
-            normal_base = var["nucleotide_normal"]
+            normal_base = var["wild_type_base"]
             gene = var["gene"]
 
             # Combine Watson and Crick fourmers into single field.
-            if field_name == "fourmer_counts":
+            if field_name == "fourmer":
                 counts = defaultdict(lambda: defaultdict(int))
-                counts = dict_sum_sum(counts, var["watson_fourmer_counts"])
-                counts = dict_sum_sum(counts, var["crick_fourmer_counts"])
-                # raise
+                counts = dict_sum_sum(counts, var["watson_fourmer"])
+                counts = dict_sum_sum(counts, var["crick_fourmer"])
             else:
                 counts = var[field_name]
             normal_counts[gene] = dict_sum(normal_counts[gene], counts[normal_base])
-            for base in var["nucleotide_variants"]:
+            for base in var["variant_bases"]:
                 variant_counts[gene] = dict_sum(variant_counts[gene], counts[base])
 
     index = None
-    if field_name in (
-        "fourmer_counts",
-        "watson_fourmer_counts",
-        "crick_fourmer_counts",
-    ):
+    if field_name in ("fourmer", "watson_fourmer", "crick_fourmer"):
         index = pd.Series(range(4 ** 4)).apply(int_to_fourmer)
     normals = dict_to_frame(normal_counts, index)
     variants = dict_to_frame(variant_counts, index)
@@ -143,18 +138,14 @@ def compute_domain(data_frames, field_name: str):
     Determine the largest indices (fragment size) and columns (gene names).
     """
     genes = set()
-    if field_name in (
-        "watson_fourmer_counts",
-        "crick_fourmer_counts",
-        "fourmer_counts",
-    ):
+    if field_name in ("watson_fourmer", "crick_fourmer", "fourmer"):
         for df in data_frames:
             genes = genes.union(set(df.columns))
         # Index are all possible fourmers.
         index = pd.Series(range(4 ** 4)).apply(int_to_fourmer)
         return index, genes
 
-    elif field_name == "fragment_size_counts":
+    elif field_name == "fragment_length":
         max_fragment_size = 1
         for df in data_frames:
             if not df.empty:
@@ -187,11 +178,11 @@ def load_samples_as_frame(filenames: Iterable[str], field_name: str) -> pd.DataF
         items = [pd.DataFrame(0, **kwargs).add(df, fill_value=0) for df in data_frames]
         names = [tuple(f.split("/")[-1].split(".")[0].split("_")) for f in filenames]
         item_name = "length (bp)"
-        if field_name == "fourmer_counts":
+        if field_name == "fourmer":
             item_name = "4mer"
-        elif field_name == "watson_fourmer_counts":
+        elif field_name == "watson_fourmer":
             item_name = "watson 4mer"
-        elif field_name == "crick_fourmer_counts":
+        elif field_name == "crick_fourmer":
             item_name = "crick 4mer"
         panel = pd.concat(
             items, keys=names, names=["Patient ID", "sample number", item_name], axis=0
@@ -210,7 +201,9 @@ def to_cumulative(counts):
 def _get_principle_axis(frame):
     """ Determine which is the primary column of interest. """
     principle_axis = "length (bp)"
-    potential_columns = [c for c in frame.reset_index().columns if "4mer" in c]
+    potential_columns = [
+        c for c in frame.reset_index().columns if isinstance(c, str) and "4mer" in c
+    ]
     if any(potential_columns):
         principle_axis = potential_columns[0]
     return principle_axis
