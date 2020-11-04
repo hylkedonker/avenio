@@ -236,73 +236,33 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     return frequent_mutations
 
 
-def coarse_grain_columns(
-    data_frame: pd.DataFrame, operation: Callable = np.sum
-) -> pd.DataFrame:
+def transpose(series: pd.Series) -> pd.DataFrame:
     """
-    Coarse grain over coding changes.
-
-    Columns have the form, e.g., ('hsa05226', 'ABL1', 'c.2976G>A'), coarse grain over
-    the last element (the coding change in this case).
-
-    Args:
-        drop_remaining_grain_labels (bool): Whether to drop 'hsa05226' in the example
-            above.
+    Transpose level 1 values (gene, or pathway/network) of series into dataframe.
     """
-    grain_labels = tuple(zip(*data_frame.columns))
-    coarse_labels = tuple(zip(*grain_labels[:-1]))  # Repack all but the last element.
+    patient_ids = series.index.get_level_values("Patient ID")
+    columns = np.unique(series.index.get_level_values(1))
+    transposed_sheet = pd.DataFrame(
+        0.0, index=np.unique(patient_ids), columns=sorted(columns)
+    )
+    for ptid, column in series.index:
+        transposed_sheet.loc[ptid, column] = series.loc[ptid, column][0]
 
-    unique_labels = np.unique(coarse_labels, axis=0)
-    coarse_sheet = pd.DataFrame(0.0, index=data_frame.index, columns=unique_labels)
-
-    # Select columns belonging to `gene` and aggregate using `operation`.
-    for label in coarse_sheet.columns:
-
-        def select_grains(x):
-            """ Select all columns belonging to `label` coarseness. """
-            return x[:-1] == label
-
-        grains = list(filter(select_grains, data_frame.columns))
-        coarse_sheet[label] = data_frame[grains].aggregate(operation, axis="columns")
-
-    return coarse_sheet
+    return transposed_sheet
 
 
-def transpose_and_transform(
+def split_time_and_transform(
     data_frame: pd.DataFrame,
     column_pair: list,
     transformation: Callable[[float, float], float],
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Tranpose `data_frame`, returning the t0 (column_pair[0]), t1 (column_pair[1]) and
-    transformation(t0, t1) values.
-
-    Transforms `data_frame` with columns ('Patient ID', 'Gene', 'Coding Change') to a
-    data frame with layout 'Patient ID' x ('Gene', 'Coding Change', 'Pathway').
+    Split by time and apply `transformation` to t0 and t1 columns
     """
-    patient_ids = data_frame["Patient ID"]
-
-    # New column name is a pair defined by the values of these two fields.
-    names = ["Annotation", "Gene", "Coding Change"]
-    new_columns = tuple(zip(*(data_frame[c] for c in names)))
-
-    # Create and fill three transposed sheets: t0, t1 and f(t0, t1).
-    t0_sheet = pd.DataFrame(
-        0.0, index=np.unique(patient_ids), columns=np.unique(new_columns, axis=0)
-    )
-    t1_sheet = t0_sheet.copy()
-    transf_sheet = t0_sheet.copy()
-    for ind in data_frame.index:
-        patient_id = data_frame.loc[ind, "Patient ID"]
-        column_name = tuple(data_frame.loc[ind, c] for c in names)
-        new_ind = (patient_id, column_name)
-        t0_value = data_frame.loc[ind, column_pair[0]]
-        t1_value = data_frame.loc[ind, column_pair[1]]
-        t0_sheet.loc[new_ind] = t0_value
-        t1_sheet.loc[new_ind] = t1_value
-        transf_sheet.loc[new_ind] = transformation(t0_value, t1_value)
-
-    return t0_sheet.copy(), t1_sheet.copy(), transf_sheet.copy()
+    t0_sheet = data_frame[column_pair[0]].copy()
+    t1_sheet = data_frame[column_pair[1]].copy()
+    transform_sheet = transformation(t0_sheet, t1_sheet).copy()
+    return t0_sheet, t1_sheet, transform_sheet
 
 
 def load_process_and_store_spreadsheets(
@@ -342,33 +302,37 @@ def load_process_and_store_spreadsheets(
     for column in columns:
         column_pair = [f"T0: {column}", f"T1: {column}"]
         # Filter out the column pairs, and remove empty fields.
-        mutations = spread_sheet[column_pair].dropna(how="all").fillna(0).reset_index()
+        mutations = spread_sheet[column_pair].dropna(how="all").fillna(0)
         # Repair dirty cells (with per cent signs etc.).
         clean_mutation_sheet = clean_and_verify_data_frame(mutations, column_pair)
 
-        import ipdb
-
-        ipdb.set_trace()
-
-        # Transpose table, and generate sheet for t0 mutations, t1 mutations, and those
-        # combined with `transformation`.
-        transposed_sheets = transpose_and_transform(
+        # Make seperate sheets for t0, t1 and both timepoints transformed.
+        t0_sheet, t1_sheet, transf_sheet = split_time_and_transform(
             clean_mutation_sheet, column_pair, transformation
         )
-        timepoint_names = ("t0", "t1", transformation.__name__)
 
-        for time_name, mutation_sheet in zip(timepoint_names, transposed_sheets):
-            gene_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
-            pathway_sheet = coarse_grain_columns(gene_sheet, operation=np.sum)
-            gene_sheet.columns = gene_sheet.columns.to_series().apply(lambda x: x[1])
-            pathway_sheet.columns = pathway_sheet.columns.to_series().apply(
-                lambda x: x[0]
+        sheets = {
+            "t0": t0_sheet,
+            "t1": t1_sheet,
+            transformation.__name__: transf_sheet,
+        }
+        for time_name, mutation_sheet in sheets.items():
+            # Aggregate over coding change.
+            gene_sheet = (
+                mutation_sheet.reset_index()
+                .groupby(["Patient ID", "Gene", "Annotation"])
+                .sum()
             )
+            # Aggregate over gene.
+            annotation_sheet = gene_sheet.groupby(["Patient ID", "Annotation"]).sum()
+
+            gene_sheet = transpose(gene_sheet.droplevel("Annotation"))
+            annotation_sheet = transpose(annotation_sheet)
 
             # Make a sheet for each level of coarseness.
             for coarseness_name, coarse_sheet in {
                 "gene": gene_sheet,
-                "pathway": pathway_sheet,
+                "annotated": annotation_sheet,
             }.items():
                 coarse_sheet = add_mutationless_patients(coarse_sheet, clinical_data)
                 # Merge with clinical data.
@@ -434,12 +398,16 @@ def clean_and_verify_data_frame(
         mutation_data_frame, columns_to_number=columns_to_transform
     )
 
-    clean_patients = clean_patient_mutations["Patient ID"].unique()
-    dirty_patients = dirty_patient_mutations["Patient ID"].unique()
+    clean_patients = clean_patient_mutations.index.get_level_values(
+        "Patient ID"
+    ).unique()
+    dirty_patients = dirty_patient_mutations.index.get_level_values(
+        "Patient ID"
+    ).unique()
 
     # Verify that the combination of the patients must give all patients.
     assert set(clean_patients).union(set(dirty_patients)) == set(
-        mutation_data_frame["Patient ID"].unique()
+        mutation_data_frame.index.get_level_values("Patient ID").unique()
     )
 
     # Verify that there are no more NA values.
