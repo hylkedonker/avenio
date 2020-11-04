@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
+from numpy import log
 import pandas as pd
 
 
@@ -209,10 +210,13 @@ def _get_principle_axis(frame):
     return principle_axis
 
 
-def pool(df):
+def pool(df, normalise=False):
     """ Pool over genes, patients, and samples. """
     principle_axis = _get_principle_axis(df)
-    return df.sum(axis=1).groupby(principle_axis).sum().astype(int)
+    pooled_series = df.sum(axis=1).groupby(principle_axis).sum().astype(int)
+    if normalise:
+        return safe_normalise(pooled_series)
+    return pooled_series
 
 
 def pool_timepoints(data_frame):
@@ -245,6 +249,11 @@ def pool_and_normalise(data_frame):
         .groupby("Patient ID")
         .apply(safe_normalise)
     )
+
+
+def entropy(p):
+    S = -p * log(p, where=p != 0.0) / log(256)
+    return S.sum()
 
 
 def select_sample_variants(

@@ -281,13 +281,9 @@ def transpose_and_transform(
     data frame with layout 'Patient ID' x ('Gene', 'Coding Change', 'Pathway').
     """
     patient_ids = data_frame["Patient ID"]
-    # Assign pathway to each gene.
-    pathways = pd.read_excel("gene_pathway_most_frequent.xlsx")
-    gene_path_map = dict(zip(pathways.iloc[:, 0], pathways.iloc[:, 1]))
-    data_frame["Pathway"] = data_frame["Gene"].map(gene_path_map)
 
     # New column name is a pair defined by the values of these two fields.
-    names = ["Pathway", "Gene", "Coding Change"]
+    names = ["Annotation", "Gene", "Coding Change"]
     new_columns = tuple(zip(*(data_frame[c] for c in names)))
 
     # Create and fill three transposed sheets: t0, t1 and f(t0, t1).
@@ -318,6 +314,7 @@ def load_process_and_store_spreadsheets(
         "No. Mutant Molecules per mL",
         "CNV Score",
     ],
+    gene_annotation_filename: str = "gene_annotation.xlsx",
     all_filename_prefix: str = "output/all",
     train_filename_prefix: str = "output/train",
     test_filename_prefix: str = "output/test",
@@ -335,6 +332,9 @@ def load_process_and_store_spreadsheets(
         spread_sheet_filename, spss_filename
     )
 
+    # Add pathway or network annotations.
+    patient_mutations = annotate_genes(patient_mutations, gene_annotation_filename)
+
     # Combine the T0 and T1 measurements in a single record.
     spread_sheet = merge_mutation_spreadsheet_t0_with_t1(patient_mutations, columns)
 
@@ -346,12 +346,17 @@ def load_process_and_store_spreadsheets(
         # Repair dirty cells (with per cent signs etc.).
         clean_mutation_sheet = clean_and_verify_data_frame(mutations, column_pair)
 
+        import ipdb
+
+        ipdb.set_trace()
+
         # Transpose table, and generate sheet for t0 mutations, t1 mutations, and those
         # combined with `transformation`.
         transposed_sheets = transpose_and_transform(
             clean_mutation_sheet, column_pair, transformation
         )
         timepoint_names = ("t0", "t1", transformation.__name__)
+
         for time_name, mutation_sheet in zip(timepoint_names, transposed_sheets):
             gene_sheet = coarse_grain_columns(mutation_sheet, operation=np.sum)
             pathway_sheet = coarse_grain_columns(gene_sheet, operation=np.sum)
@@ -384,6 +389,18 @@ def load_process_and_store_spreadsheets(
                     test_filename=test_filename_prefix
                     + f"_{coarseness_name}__{time_name}__{column}",
                 )
+
+
+def annotate_genes(data_frame, annotation_filename):
+    """
+    Use spreadsheet with gene annotations (e.g., pathway or network).
+    """
+    annotated = data_frame.copy()
+    # Assign pathway to each gene.
+    pathways = pd.read_excel(annotation_filename)
+    gene_path_map = dict(zip(pathways.iloc[:, 0], pathways.iloc[:, 1]))
+    annotated["Annotation"] = annotated["Gene"].map(gene_path_map)
+    return annotated
 
 
 def data_frame_to_disk(
@@ -464,13 +481,14 @@ def merge_mutation_spreadsheet_t0_with_t1(
             return int(tokens[1])
         return None
 
+    spread_sheet = spread_sheet.copy()
     # Determine whether it is t0 or t1 measurement.
     spread_sheet["Sample ID"] = spread_sheet["Sample ID"].apply(get_sample_number)
     # Replace NA with empty string in order to join the rows using pandas.
     spread_sheet["Coding Change"] = spread_sheet["Coding Change"].astype(str).fillna("")
 
     # This triplet uniquely defines a record.
-    join_columns = ["Patient ID", "Gene", "Coding Change"]
+    join_columns = ["Patient ID", "Gene", "Annotation", "Coding Change"]
 
     # Split the spreadsheet in two: One for time point t0, and one for t1.
     t0_samples = spread_sheet["Sample ID"] == 0
@@ -495,10 +513,8 @@ def merge_mutation_spreadsheet_t0_with_t1(
     data_frame_t1 = data_frame_t1[t1_columns_to_keep]
 
     # Merge the two data frames back together.
-    merged_data_frame = data_frame_t0.set_index(
-        ["Patient ID", "Gene", "Coding Change"]
-    ).join(
-        data_frame_t1.set_index(["Patient ID", "Gene", "Coding Change"]), how="outer"
+    merged_data_frame = data_frame_t0.set_index(join_columns).join(
+        data_frame_t1.set_index(join_columns), how="outer"
     )
 
     # Keep only the columns we are interested in (i.e., remove the remaining columns

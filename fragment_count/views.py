@@ -51,7 +51,14 @@ def plot_distribution_errorbar(seq, label=None, with_peaks=True):
     plt.xlim(fragment_window)
 
 
-def plot_motif(motifs, wild_type_frequency, variant_frequency, ax=None):
+def plot_motif(
+    motifs,
+    wild_type_frequency,
+    variant_frequency,
+    wild_type_error=None,
+    variant_error=None,
+    ax=None,
+):
     """
     Make bar plot comparison between wild type frequencies and variant frequencies.
     """
@@ -62,17 +69,23 @@ def plot_motif(motifs, wild_type_frequency, variant_frequency, ax=None):
 
     width = 0.25
     x = np.arange(len(motifs))
-    ax.bar(
-        x - width / 2,
-        wild_type_frequency,
-        width,
-        color="C0",
-        alpha=0.75,
-        label="wild-type",
-    )
-    ax.bar(
-        x + width / 2, variant_frequency, width, color="C1", alpha=0.75, label="variant"
-    )
+    wild_kwargs = {
+        "color": "C0",
+        "alpha": 0.75,
+        "label": "wild-type",
+    }
+    if wild_type_error is not None:
+        wild_kwargs["yerr"] = wild_type_error.loc[motifs]
+
+    ax.bar(x - width / 2, wild_type_frequency.loc[motifs], width, **wild_kwargs)
+    variant_kwargs = {
+        "color": "C1",
+        "alpha": 0.75,
+        "label": "variant",
+    }
+    if variant_error is not None:
+        variant_kwargs["yerr"] = variant_error.loc[motifs]
+    ax.bar(x + width / 2, variant_frequency.loc[motifs], width, **variant_kwargs)
     ax.set_xticks(x)
     ax.set_xticklabels(motifs)
     ax.set_ylabel("Frequency")
