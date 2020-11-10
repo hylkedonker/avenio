@@ -285,6 +285,7 @@ clinical_features = [
     "livermeta",
     "lungmeta",
     "skeletonmeta",
+    # "PDL1",
 ]
 
 # From those listed above, the following columns are categorical (not counting
@@ -302,6 +303,7 @@ categorical_phenotypes = [
     "livermeta",
     "lungmeta",
     "skeletonmeta",
+    # "PDL1",
 ]
 
 
@@ -380,7 +382,25 @@ def get_hyper_param_grid(model) -> dict:
         )
     elif isinstance(model, (BernoulliNB, CategoricalNB, ComplementNB)):
         filter_params.update(
-            {f"{prefix}alpha": [0.125, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0]}
+            {
+                f"{prefix}alpha": [
+                    0.005,
+                    0.01,
+                    0.03,
+                    0.06,
+                    0.125,
+                    0.25,
+                    0.5,
+                    0.75,
+                    1.0,
+                    1.5,
+                    2.0,
+                    4.0,
+                    8.0,
+                    16.0,
+                    32.0,
+                ]
+            }
         )
 
     return filter_params

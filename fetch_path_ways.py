@@ -73,7 +73,9 @@ def fetch_networks(output_filename) -> pd.DataFrame:
     """
     Download network annotations from KEGG.
     """
-    network_map = pd.DataFrame("None", index=target_genes, columns=["entries", "names"])
+    network_map = pd.DataFrame(
+        "not_annotated", index=target_genes, columns=["entries", "names"]
+    )
     for gene in target_genes:
         if (kegg_id := find_gene(gene)) :
             if (gene_networks := find_networks(kegg_id)) :
@@ -101,7 +103,7 @@ def fetch_pathways(output_filename):
         df = pd.read_html(url)[1]
         if len(df) == 0 or df.shape == (1, 1):
             print(f"No hits for {gene}!")
-            pathway_map.loc[gene] = ["None"]
+            pathway_map.loc[gene] = ["not_annotated"]
             continue
 
         df = filter_pathways(df)
@@ -150,10 +152,10 @@ def assign_most_common_pathway(input_filename, output_filename):
 
 
 # fetch_pathways(output_filename="/tmp/gene_pathway_all.xlsx")
-# network_map = fetch_networks(output_filename="/tmp/gene_networks_all.xlsx")
+network_map = fetch_networks(output_filename="/tmp/gene_networks_all.xlsx")
 # pprint(network_map)
 
 assign_most_common_pathway(
     input_filename="/tmp/gene_networks_all.xlsx",
-    output_filename="gene_networks_most_frequent.xlsx",
+    output_filename="gene_annotation.xlsx",
 )

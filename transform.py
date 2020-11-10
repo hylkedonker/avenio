@@ -296,6 +296,9 @@ def load_process_and_store_spreadsheets(
     patient_mutations = annotate_genes(patient_mutations, gene_annotation_filename)
 
     # Combine the T0 and T1 measurements in a single record.
+    patient_mutations["chromosome"] = patient_mutations["Genomic Position"].apply(
+        lambda x: x.split(":")[0] if isinstance(x, str) else x
+    )
     spread_sheet = merge_mutation_spreadsheet_t0_with_t1(patient_mutations, columns)
 
     # Make a different document for each of the column pairs.
@@ -316,23 +319,32 @@ def load_process_and_store_spreadsheets(
             "t1": t1_sheet,
             transformation.__name__: transf_sheet,
         }
-        for time_name, mutation_sheet in sheets.items():
+        for time_name, mutation_series in sheets.items():
+            mutation_sheet = mutation_series.reset_index()
             # Aggregate over coding change.
-            gene_sheet = (
-                mutation_sheet.reset_index()
-                .groupby(["Patient ID", "Gene", "Annotation"])
-                .sum()
-            )
+            gene_sheet = mutation_sheet.groupby(["Patient ID", "Gene"]).sum()
             # Aggregate over gene.
-            annotation_sheet = gene_sheet.groupby(["Patient ID", "Annotation"]).sum()
+            annotation_sheet = mutation_sheet.groupby(
+                ["Patient ID", "Annotation"]
+            ).sum()
 
-            gene_sheet = transpose(gene_sheet.droplevel("Annotation"))
+            chromosome_sheet = mutation_sheet.groupby(
+                ["Patient ID", "chromosome"]
+            ).sum()
+            vartype_sheet = mutation_sheet.groupby(
+                ["Patient ID", "Variant Description"]
+            ).sum()
+            gene_sheet = transpose(gene_sheet)
             annotation_sheet = transpose(annotation_sheet)
+            chromosome_sheet = transpose(chromosome_sheet)
+            vartype_sheet = transpose(vartype_sheet)
 
             # Make a sheet for each level of coarseness.
             for coarseness_name, coarse_sheet in {
                 "gene": gene_sheet,
                 "annotated": annotation_sheet,
+                "chromosome": chromosome_sheet,
+                "varianttype": vartype_sheet,
             }.items():
                 coarse_sheet = add_mutationless_patients(coarse_sheet, clinical_data)
                 # Merge with clinical data.
@@ -456,7 +468,14 @@ def merge_mutation_spreadsheet_t0_with_t1(
     spread_sheet["Coding Change"] = spread_sheet["Coding Change"].astype(str).fillna("")
 
     # This triplet uniquely defines a record.
-    join_columns = ["Patient ID", "Gene", "Annotation", "Coding Change"]
+    join_columns = [
+        "Patient ID",
+        "chromosome",
+        "Gene",
+        "Annotation",
+        "Variant Description",
+        "Coding Change",
+    ]
 
     # Split the spreadsheet in two: One for time point t0, and one for t1.
     t0_samples = spread_sheet["Sample ID"] == 0
