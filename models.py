@@ -2,12 +2,89 @@ from typing import Callable, Optional, Union
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import GenericUnivariateSelect, VarianceThreshold
+from sklearn.naive_bayes import BernoulliNB, ComplementNB, MultinomialNB
 from sklearn.preprocessing import MaxAbsScaler, OrdinalEncoder
 from sklearn.utils import safe_mask
+from sklearn.utils.multiclass import unique_labels
+from sklearn.utils.validation import check_is_fitted
 
-from utils import get_categorical_columns, get_numerical_columns
+from pomegranate import BernoulliDistribution, NaiveBayes
+
+
+def get_categorical_columns(
+    data_frame: pd.DataFrame, uniqueness_thresshold: Optional[float] = None
+) -> list:
+    """
+    Find all non-numeric columns.
+
+    Args:
+        data_frame (pd.DataFrame): Analyse columns from this data frame.
+        uniqueness_thresshold (float): If less than this fraction of the values are
+            unique, than consider the column categorical.
+    """
+    categorical_columns = []
+    for column in data_frame.columns:
+        values = data_frame[column]
+
+        if values.dtype.name == "category":
+            categorical_columns.append(column)
+            continue
+
+        # This is a dirty way to check if it is non-numeric, but pandas thinks
+        # all the columns are strings.
+        try:
+            float(values.iloc[0])
+        except ValueError:
+            categorical_columns.append(column)
+            continue
+        except TypeError:
+            pass
+
+        # If it is numeric, but lots of non-zero values are identical, consider it
+        # categorical.
+        if uniqueness_thresshold is not None:
+            # Correct for sparseness, by ignoring zero values.
+            if 0 in values.unique() and values.nunique() > 1:
+                non_sparse_counts = len(values) - values.value_counts()[0]
+                if (values.nunique() - 1) / non_sparse_counts <= uniqueness_thresshold:
+                    categorical_columns.append(column)
+            elif values.nunique() / len(values) <= uniqueness_thresshold:
+                categorical_columns.append(column)
+
+    return categorical_columns
+
+
+def get_numerical_columns(
+    data_frame: pd.DataFrame,
+    ignore_columns: list = [],
+    uniqueness_thresshold: Optional[float] = None,
+) -> list:
+    """
+    Single out numerical columns.
+
+    Args:
+        ignore_columns (list): Remove these columns from the consideration.
+        uniqueness_thresshold (float): If more than this fraction of the values are
+            unique, consider the column numerical.
+    """
+    categorical_columns = get_categorical_columns(data_frame, uniqueness_thresshold)
+
+    def is_numeric_and_not_ignored(column):
+        """ Columns not categorical are numeric. """
+        if column not in categorical_columns and column not in ignore_columns:
+            return True
+        return False
+
+    numerical_columns = list(filter(is_numeric_and_not_ignored, data_frame.columns))
+    return numerical_columns
 
 
 class AggregateColumns(BaseEstimator, TransformerMixin):
@@ -56,6 +133,74 @@ class AggregateColumns(BaseEstimator, TransformerMixin):
         # Keep track of returned columns of the last transformation.
         self.returned_columns_ = passthrough_columns + [self.aggregate_column_name_]
         return X_transformed
+
+
+class BernoulliNBPomegranate(BaseEstimator, ClassifierMixin):
+    """
+    scikit-learn wrapper around Pomegranate NaiveBayes classifier.
+    """
+
+    def __init__(self, alpha: float = 1.0):
+        self.alpha = alpha
+
+    def _clean(self, X, y=None):
+        """
+        Turn into numpy array.
+        """
+        Xnp = X
+        if isinstance(X, pd.DataFrame):
+            Xnp = X.values
+
+        if y is None:
+            return Xnp
+
+        ynp = self.map_label_(y)
+        return Xnp, ynp
+
+    def fit(self, X, y):
+        """
+        Fit pomegranate NaiveBayes model from BernoulliDistribution's.
+        """
+        # Store the classes seen during fit
+        self.classes_ = unique_labels(y)
+        self.class_map_ = {k: i for i, k in enumerate(self.classes_)}
+        self.class_map_inverse_ = {i: k for i, k in enumerate(self.classes_)}
+        self.map_label_ = np.vectorize(lambda x: self.class_map_[x])
+        self.map_label_inverse_ = np.vectorize(lambda x: self.class_map_inverse_[x])
+
+        X, y = self._clean(X, y)
+
+        self.model_ = NaiveBayes.from_samples(
+            BernoulliDistribution, X, y, alpha=self.alpha,
+        )
+        self.is_fitted_ = True
+        return self
+
+    def predict(self, X):
+        """
+        Predict labels using pomegranate.
+        """
+        # Check is fit had been called
+        check_is_fitted(self)
+        X = self._clean(X)
+        y = self.model_.predict(X)
+        return self.map_label_inverse_(y)
+
+    def predict_proba(self, X):
+        """
+        Make probability prediction.
+        """
+        # Check is fit had been called
+        check_is_fitted(self)
+        X = self._clean(X)
+        return self.model_.predict_proba(X)
+
+    def score(self, X, y):
+        """
+        Calculate accuracy.
+        """
+        X, y = self._clean(X, y)
+        return self.model_.score(X, y)
 
 
 class SparseFeatureFilter(BaseEstimator, TransformerMixin):
@@ -492,3 +637,104 @@ class AutoNumericFilter(BaseEstimator, TransformerMixin):
         Filter out the numeric columns, retaining the pandas structure.
         """
         return X.drop(columns=self.columns_to_remove)
+
+
+def get_hyper_param_grid(model) -> dict:
+    """
+    Get parameter grid for hyper parameter tuning.
+    """
+    filter_params = {}
+
+    prefix = ""
+    if isinstance(model, Pipeline):
+        prefix = "estimator__"
+        if "statistical_filter" in model.named_steps:
+            filter_params.update({"statistical_filter__alpha": [0.05, 0.1, 0.2, 0.4]})
+        model = model.named_steps["estimator"]
+
+    if isinstance(model, LogisticRegression):
+        filter_params.update(
+            {
+                f"{prefix}C": [
+                    0.005,
+                    0.01,
+                    0.025,
+                    0.05,
+                    0.075,
+                    0.1,
+                    0.175,
+                    0.25,
+                    0.5,
+                    0.75,
+                    1.0,
+                    1.5,
+                    2.0,
+                    4.0,
+                ]
+            }
+        )
+    elif isinstance(model, DecisionTreeClassifier):
+        filter_params.update(
+            {
+                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20],
+                f"{prefix}criterion": ["gini", "entropy"],
+            }
+        )
+    elif isinstance(model, RandomForestClassifier):
+        filter_params.update(
+            {
+                f"{prefix}n_estimators": [15, 30, 50, 100],
+                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
+                f"{prefix}class_weight": ["balanced", "balanced_subsample"],
+            }
+        )
+    elif isinstance(model, GradientBoostingClassifier):
+        filter_params.update(
+            {
+                f"{prefix}n_estimators": [15, 30, 50, 100],
+                f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
+                f"{prefix}max_depth": [2, 3, 5, 7],
+            }
+        )
+    elif isinstance(model, KNeighborsClassifier):
+        filter_params.update(
+            {
+                f"{prefix}n_neighbors": [2, 3, 4, 6, 8, 12, 20],
+                f"{prefix}weights": ["uniform", "distance"],
+                f"{prefix}p": [1, 2, 3],
+            }
+        )
+    elif isinstance(model, SVC):
+        filter_params.update(
+            {
+                f"{prefix}C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
+                f"{prefix}kernel": ["linear", "poly", "rbf", "sigmoid"],
+                f"{prefix}gamma": ["auto", "scale"],
+            }
+        )
+    elif isinstance(
+        model, (BernoulliNBPomegranate, BernoulliNB, ComplementNB, MultinomialNB)
+    ):
+        filter_params.update(
+            {
+                f"{prefix}alpha": [
+                    0.005,
+                    0.01,
+                    0.03,
+                    0.06,
+                    0.125,
+                    0.25,
+                    0.5,
+                    0.75,
+                    1.0,
+                    1.5,
+                    2.0,
+                    4.0,
+                    8.0,
+                    16.0,
+                    32.0,
+                ]
+            }
+        )
+
+    return filter_params

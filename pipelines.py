@@ -18,8 +18,12 @@ import numpy as np
 from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
-from const import clinical_features, get_hyper_param_grid
-from models import AutoMaxScaler, SparseFeatureFilter, TransformColumnType
+from const import clinical_features
+from models import (
+    get_hyper_param_grid,
+    AutoMaxScaler,
+    TransformColumnType,
+)
 
 
 RANDOM_STATE = 1234
@@ -177,9 +181,17 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
     # Remove original column.
     X_prime.drop(columns="Age", inplace=True)
 
+    X_prime["PD_L1>50%"] = np.nan
+    not_null = X_prime["PD_L1_continous"].notnull()
+    X_prime.loc[not_null, "PD_L1>50%"] = (
+        X_prime.loc[not_null, "PD_L1_continous"] > 50
+    ).astype(int)
+    X_prime.drop(columns="PD_L1_continous", inplace=True)
+
     # All clinical variables are categories.
     new_clinical_features = clinical_features.copy()
     new_clinical_features[new_clinical_features.index("Age")] = "age"
+    new_clinical_features[new_clinical_features.index("PD_L1_continous")] = "PD_L1>50%"
     X_prime[new_clinical_features] = X_prime[new_clinical_features].astype("category")
     return X_prime
 

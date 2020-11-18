@@ -4,7 +4,7 @@ from typing import Literal, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from utils import get_categorical_columns
+from models import get_categorical_columns
 from fragment_count.utils import load_samples_as_frame
 
 RANDOM_STATE = 1234

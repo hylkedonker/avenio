@@ -1,11 +1,3 @@
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import BernoulliNB, CategoricalNB, ComplementNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.svm import SVC
-from sklearn.pipeline import Pipeline
-
 # target_genes = [
 #     "ABCC5",
 #     "ABCG2",
@@ -285,7 +277,7 @@ clinical_features = [
     "livermeta",
     "lungmeta",
     "skeletonmeta",
-    # "PDL1",
+    "PD_L1_continous",
 ]
 
 # From those listed above, the following columns are categorical (not counting
@@ -305,102 +297,3 @@ categorical_phenotypes = [
     "skeletonmeta",
     # "PDL1",
 ]
-
-
-def get_hyper_param_grid(model) -> dict:
-    """
-    Get parameter grid for hyper parameter tuning.
-    """
-    filter_params = {}
-
-    prefix = ""
-    if isinstance(model, Pipeline):
-        prefix = "estimator__"
-        if "statistical_filter" in model.named_steps:
-            filter_params.update({"statistical_filter__alpha": [0.05, 0.1, 0.2, 0.4]})
-        model = model.named_steps["estimator"]
-
-    if isinstance(model, LogisticRegression):
-        filter_params.update(
-            {
-                f"{prefix}C": [
-                    0.005,
-                    0.01,
-                    0.025,
-                    0.05,
-                    0.075,
-                    0.1,
-                    0.175,
-                    0.25,
-                    0.5,
-                    0.75,
-                    1.0,
-                    1.5,
-                    2.0,
-                    4.0,
-                ]
-            }
-        )
-    elif isinstance(model, DecisionTreeClassifier):
-        filter_params.update(
-            {
-                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, 20],
-                f"{prefix}criterion": ["gini", "entropy"],
-            }
-        )
-    elif isinstance(model, RandomForestClassifier):
-        filter_params.update(
-            {
-                f"{prefix}n_estimators": [15, 30, 50, 100],
-                f"{prefix}max_depth": [2, 3, 5, 7, 10, 15, None],
-                f"{prefix}class_weight": ["balanced", "balanced_subsample"],
-            }
-        )
-    elif isinstance(model, GradientBoostingClassifier):
-        filter_params.update(
-            {
-                f"{prefix}n_estimators": [15, 30, 50, 100],
-                f"{prefix}learning_rate": [0.025, 0.05, 0.1, 0.2],
-                f"{prefix}max_depth": [2, 3, 5, 7],
-            }
-        )
-    elif isinstance(model, KNeighborsClassifier):
-        filter_params.update(
-            {
-                f"{prefix}n_neighbors": [2, 3, 4, 6, 8, 12, 20],
-                f"{prefix}weights": ["uniform", "distance"],
-                f"{prefix}p": [1, 2, 3],
-            }
-        )
-    elif isinstance(model, SVC):
-        filter_params.update(
-            {
-                f"{prefix}C": [0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0],
-                f"{prefix}kernel": ["linear", "poly", "rbf", "sigmoid"],
-                f"{prefix}gamma": ["auto", "scale"],
-            }
-        )
-    elif isinstance(model, (BernoulliNB, CategoricalNB, ComplementNB)):
-        filter_params.update(
-            {
-                f"{prefix}alpha": [
-                    0.005,
-                    0.01,
-                    0.03,
-                    0.06,
-                    0.125,
-                    0.25,
-                    0.5,
-                    0.75,
-                    1.0,
-                    1.5,
-                    2.0,
-                    4.0,
-                    8.0,
-                    16.0,
-                    32.0,
-                ]
-            }
-        )
-
-    return filter_params

@@ -8,75 +8,7 @@ import pandas as pd
 from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
 from sklearn.pipeline import Pipeline
 
-from const import get_hyper_param_grid
-
-
-def get_categorical_columns(
-    data_frame: pd.DataFrame, uniqueness_thresshold: Optional[float] = None
-) -> list:
-    """
-    Find all non-numeric columns.
-
-    Args:
-        data_frame (pd.DataFrame): Analyse columns from this data frame.
-        uniqueness_thresshold (float): If less than this fraction of the values are
-            unique, than consider the column categorical.
-    """
-    categorical_columns = []
-    for column in data_frame.columns:
-        values = data_frame[column]
-
-        if values.dtype.name == "category":
-            categorical_columns.append(column)
-            continue
-
-        # This is a dirty way to check if it is non-numeric, but pandas thinks
-        # all the columns are strings.
-        try:
-            float(values.iloc[0])
-        except ValueError:
-            categorical_columns.append(column)
-            continue
-        except TypeError:
-            pass
-
-        # If it is numeric, but lots of non-zero values are identical, consider it
-        # categorical.
-        if uniqueness_thresshold is not None:
-            # Correct for sparseness, by ignoring zero values.
-            if 0 in values.unique() and values.nunique() > 1:
-                non_sparse_counts = len(values) - values.value_counts()[0]
-                if (values.nunique() - 1) / non_sparse_counts <= uniqueness_thresshold:
-                    categorical_columns.append(column)
-            elif values.nunique() / len(values) <= uniqueness_thresshold:
-                categorical_columns.append(column)
-
-    return categorical_columns
-
-
-def get_numerical_columns(
-    data_frame: pd.DataFrame,
-    ignore_columns: list = [],
-    uniqueness_thresshold: Optional[float] = None,
-) -> list:
-    """
-    Single out numerical columns.
-
-    Args:
-        ignore_columns (list): Remove these columns from the consideration.
-        uniqueness_thresshold (float): If more than this fraction of the values are
-            unique, consider the column numerical.
-    """
-    categorical_columns = get_categorical_columns(data_frame, uniqueness_thresshold)
-
-    def is_numeric_and_not_ignored(column):
-        """ Columns not categorical are numeric. """
-        if column not in categorical_columns and column not in ignore_columns:
-            return True
-        return False
-
-    numerical_columns = list(filter(is_numeric_and_not_ignored, data_frame.columns))
-    return numerical_columns
+from models import get_hyper_param_grid
 
 
 def bootstrap(k):
