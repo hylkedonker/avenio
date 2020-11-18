@@ -92,6 +92,7 @@ def double_cross_validate(m_inner: int = 5, n_outer: int = 5, verbose=True) -> C
                 clf = GridSearchCV(
                     estimator=pipeline,
                     param_grid=get_hyper_param_grid(pipeline),
+                    scoring="roc_auc",
                     cv=inner_loop,
                     n_jobs=-1,
                     verbose=3 * int(verbose),
