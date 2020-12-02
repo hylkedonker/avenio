@@ -17,6 +17,7 @@ from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_is_fitted
 
 from pomegranate import BernoulliDistribution, NaiveBayes
+from pomegranate.distributions import Distribution
 
 
 def get_categorical_columns(
@@ -135,13 +136,16 @@ class AggregateColumns(BaseEstimator, TransformerMixin):
         return X_transformed
 
 
-class BernoulliNBPomegranate(BaseEstimator, ClassifierMixin):
+class NBPomegranate(BaseEstimator, ClassifierMixin):
     """
     scikit-learn wrapper around Pomegranate NaiveBayes classifier.
     """
 
-    def __init__(self, alpha: float = 1.0):
+    def __init__(
+        self, distributions: Union[list, dict, Distribution], alpha: float = 1.0
+    ):
         self.alpha = alpha
+        self.distributions = distributions
 
     def _clean(self, X, y=None):
         """
@@ -168,13 +172,50 @@ class BernoulliNBPomegranate(BaseEstimator, ClassifierMixin):
         self.map_label_ = np.vectorize(lambda x: self.class_map_[x])
         self.map_label_inverse_ = np.vectorize(lambda x: self.class_map_inverse_[x])
 
-        X, y = self._clean(X, y)
+        # Make a map of the columns.
+        if isinstance(X, pd.DataFrame):
+            self.column_map_ = {k: i for i, k in enumerate(X.columns)}
+        else:
+            # Identity map in case of NumPy matrix.
+            self.column_map_ = {i: i for i in range(X.shape[1])}
 
+        self.distributions_ = self.distributions
+        if isinstance(self.distributions, dict):
+            if not isinstance(X, pd.DataFrame):
+                raise ValueError
+            self.distributions_ = [self.distributions[c] for c in X.columns]
+
+        if isinstance(self.distributions_, list) and len(self.distributions_) == 1:
+            self.distributions_ = self.distributions_[0]
+
+        X, y = self._clean(X, y)
         self.model_ = NaiveBayes.from_samples(
-            BernoulliDistribution, X, y, alpha=self.alpha,
+            self.distributions_, X, y, alpha=self.alpha,
         )
         self.is_fitted_ = True
         return self
+
+    def inspect_distribution(self, column, y=None):
+        """
+        Inspect sufficient statistics of given variable.
+        """
+        check_is_fitted(self)
+
+        if y is None:
+            ys = self.classes_
+        else:
+            ys = [y]
+
+        distributions = {}
+        for yi in ys:
+            y_index = self.class_map_[yi]
+            variable_index = self.column_map_[column]
+            dist_i = self.model_.distributions[y_index].distributions[variable_index]
+            distributions[yi] = dist_i
+
+        if len(distributions) == 1:
+            return distributions[y]
+        return distributions
 
     def predict(self, X):
         """
@@ -201,6 +242,15 @@ class BernoulliNBPomegranate(BaseEstimator, ClassifierMixin):
         """
         X, y = self._clean(X, y)
         return self.model_.score(X, y)
+
+
+class BernoulliNBPomegranate(NBPomegranate):
+    """
+    scikit-learn wrapper around Pomegranate NaiveBayes classifier.
+    """
+
+    def __init__(self, alpha: float = 1.0):
+        super().__init__(distributions=BernoulliDistribution, alpha=alpha)
 
 
 class SparseFeatureFilter(BaseEstimator, TransformerMixin):
@@ -712,9 +762,7 @@ def get_hyper_param_grid(model) -> dict:
                 f"{prefix}gamma": ["auto", "scale"],
             }
         )
-    elif isinstance(
-        model, (BernoulliNBPomegranate, BernoulliNB, ComplementNB, MultinomialNB)
-    ):
+    elif isinstance(model, (NBPomegranate, BernoulliNB, ComplementNB, MultinomialNB)):
         filter_params.update(
             {
                 f"{prefix}alpha": [

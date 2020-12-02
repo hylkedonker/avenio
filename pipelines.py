@@ -18,7 +18,7 @@ import numpy as np
 from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
-from const import clinical_features
+from const import clinical_features, tmb_features
 from models import (
     get_hyper_param_grid,
     AutoMaxScaler,
@@ -188,10 +188,21 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
     X_prime.drop(columns="PD_L1_continous", inplace=True)
 
-    # All clinical variables are categories.
+    X_prime["clearance"] = X_prime["T0_T1"].map(
+        {
+            "only tumor derived mutation at t0": "t1",
+            "only tumor derived mutation at t1": "t0",
+            "patient had tumor derived mutations at both timepoints": "no",
+            "no tumor derived mutations at t0 and t1": "t0+t1",
+        }
+    )
+    X_prime.drop(columns="T0_T1", inplace=True)
+
     new_clinical_features = clinical_features.copy()
+    new_clinical_features[new_clinical_features.index("T0_T1")] = "clearance"
     new_clinical_features[new_clinical_features.index("Age")] = "age"
     new_clinical_features[new_clinical_features.index("PD_L1_continous")] = "PD_L1>50%"
+    # All clinical variables are categories.
     X_prime[new_clinical_features] = X_prime[new_clinical_features].astype("category")
     return X_prime
 
@@ -278,7 +289,9 @@ def pipeline_Donker(estimator):
         (
             "discretise_genomics",
             TransformColumnType(
-                column_type="numeric", transformation=genomics_discretiser
+                column_type="numeric",
+                transformation=genomics_discretiser,
+                ignore_columns=tmb_features,
             ),
         ),
         ("LabelEncoder", OneHotEncoder(handle_unknown="ignore", sparse=False)),

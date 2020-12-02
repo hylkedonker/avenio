@@ -278,7 +278,11 @@ clinical_features = [
     "lungmeta",
     "skeletonmeta",
     "PD_L1_continous",
+    "T0_T1",
 ]
+
+tmb_features = ["TMB_t0", "normalized_TMB_t0", "TMB_t1", "normalized_TMB_t1"]
+
 
 # From those listed above, the following columns are categorical (not counting
 # the labels).

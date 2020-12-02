@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from const import clinical_features
+from const import clinical_features, tmb_features
 from source import (
     add_mutationless_patients,
     load_avenio_files,
@@ -236,17 +236,18 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     return frequent_mutations
 
 
-def transpose(series: pd.Series) -> pd.DataFrame:
+def transpose(series: pd.Series, columns=None) -> pd.DataFrame:
     """
     Transpose level 1 values (gene, or pathway/network) of series into dataframe.
     """
     patient_ids = series.index.get_level_values("Patient ID")
-    columns = np.unique(series.index.get_level_values(1))
+    if columns is None:
+        columns = sorted(np.unique(series.index.get_level_values(1)))
     transposed_sheet = pd.DataFrame(
         0.0, index=np.unique(patient_ids), columns=sorted(columns)
     )
     for ptid, column in series.index:
-        transposed_sheet.loc[ptid, column] = series.loc[ptid, column][0]
+        transposed_sheet.loc[ptid, column] = series.loc[ptid, column]
 
     return transposed_sheet
 
@@ -263,6 +264,25 @@ def split_time_and_transform(
     t1_sheet = data_frame[column_pair[1]].copy()
     transform_sheet = transformation(t0_sheet, t1_sheet).copy()
     return t0_sheet, t1_sheet, transform_sheet
+
+
+def compute_avenio_tumor_mutational_burden(
+    variants: pd.Series, granularity: str = None
+) -> pd.DataFrame:
+    """
+    Calculate the (normalized) tumor mutational burden for AVENIO panel.
+
+    Assumes AVENIO expanded kit was used.
+    """
+    coarseness = ["Patient ID"]
+    if granularity is not None:
+        coarseness += [granularity]
+    # Avenio targeted panel captures 77 genes, 192 KB.
+    exome_captured = 0.192
+    nonzero_variants = variants[variants != 0.0]
+    tmb = nonzero_variants.groupby(coarseness).count() / exome_captured
+    concentration = nonzero_variants.groupby(coarseness).sum()
+    return pd.DataFrame({"TMB": tmb, "normalized_TMB": tmb / concentration})
 
 
 def load_process_and_store_spreadsheets(
@@ -351,6 +371,48 @@ def load_process_and_store_spreadsheets(
                 final_spreadsheet = merge_mutations_with_phenotype_data(
                     coarse_sheet, clinical_data
                 )
+                if column == "No. Mutant Molecules per mL":
+                    # Calculate TMB and normalized TMB for time points.
+                    if time_name in ("t0", "t1"):
+                        tmb_sheet = compute_avenio_tumor_mutational_burden(
+                            mutation_series
+                        )
+                        ptids = tmb_sheet.index
+                        # Default values for patients without mutations.
+                        final_spreadsheet["TMB"] = 0.0
+                        final_spreadsheet["normalized_TMB"] = 0.0
+                        final_spreadsheet.loc[
+                            ptids, ["TMB", "normalized_TMB"]
+                        ] = tmb_sheet
+                        assert not (final_spreadsheet["normalized_TMB"] == np.inf).any()
+                    # Include both time points for the merged sheet.
+                    else:
+                        t0_tmb_sheet = compute_avenio_tumor_mutational_burden(t0_sheet)
+                        t1_tmb_sheet = compute_avenio_tumor_mutational_burden(t1_sheet)
+                        # Default values for patients without mutations.
+                        final_spreadsheet[["TMB_t0", "TMB_t1"]] = 0.0
+                        final_spreadsheet[
+                            ["normalized_TMB_t0", "normalized_TMB_t1"]
+                        ] = 0.0
+                        # Set tumor mutational burden values for baseline.
+                        ptids0 = t0_tmb_sheet.index
+                        final_spreadsheet.loc[ptids0, "TMB_t0"] = t0_tmb_sheet["TMB"]
+                        final_spreadsheet.loc[
+                            ptids0, "normalized_TMB_t0"
+                        ] = t0_tmb_sheet["normalized_TMB"]
+                        # Set tumor mutational burden values for follow-up.
+                        ptids1 = t1_tmb_sheet.index
+                        final_spreadsheet.loc[ptids1, "TMB_t1"] = t1_tmb_sheet["TMB"]
+                        final_spreadsheet.loc[
+                            ptids1, "normalized_TMB_t1"
+                        ] = t1_tmb_sheet["normalized_TMB"]
+                        # Check that there are no infinities.
+                        assert not (
+                            final_spreadsheet["normalized_TMB_t0"] == np.inf
+                        ).any()
+                        assert not (
+                            final_spreadsheet["normalized_TMB_t1"] == np.inf
+                        ).any()
 
                 # Check that all patients are included.
                 assert final_spreadsheet.shape[0] == clinical_data.shape[0]
@@ -525,11 +587,14 @@ def combine_tsv_files(
     # Check consistency of data frames and combine.
     assert set(X_train_a.index.unique()) == set(X_train_b.index.unique())
 
+    # Also consider the following columns
+    no_suffix_features = set(clinical_features).union(tmb_features)
+
     # Remove phenotype columns to get the genetic columns.
-    genetic_columns_b = list(set(X_train_b.columns) - set(clinical_features))
+    genetic_columns_b = list(set(X_train_b.columns) - no_suffix_features)
     genetic_columns_b.sort()
     # We want to rename only the genetic columns, not the phenotypes.
-    genetic_columns_a = list(set(X_train_a.columns) - set(clinical_features))
+    genetic_columns_a = list(set(X_train_a.columns) - no_suffix_features)
     rename_table_a = {
         column_name: column_name + suffixes[0] for column_name in genetic_columns_a
     }
