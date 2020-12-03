@@ -262,6 +262,17 @@ target_genes = [
     "VHL",
 ]
 
+# Clinical outcome (i.e., labels that we wish to predict).
+outcome_labels = [
+    "Clinical_Response",
+    "response_grouped",
+    "OS_months",
+    "PFS_months",
+    "Censor_OS",
+    "Censor_progression",
+]
+
+
 # Phenotype features that serve as input for the model.
 clinical_features = [
     "gender",
@@ -279,6 +290,15 @@ clinical_features = [
     "skeletonmeta",
     "PD_L1_continous",
     "T0_T1",
+]
+
+meta_columns = [
+    "lymfmeta",
+    "brainmeta",
+    "adrenalmeta",
+    "livermeta",
+    "lungmeta",
+    "skeletonmeta",
 ]
 
 tmb_features = ["TMB_t0", "normalized_TMB_t0", "TMB_t1", "normalized_TMB_t1"]

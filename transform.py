@@ -5,9 +5,9 @@ from sklearn.model_selection import train_test_split
 
 from const import clinical_features, tmb_features
 from source import (
-    add_mutationless_patients,
+    add_clearance_patients,
     load_avenio_files,
-    phenotype_labels,
+    outcome_labels,
     read_preprocessed_data,
 )
 from pipelines import pipeline_Freeman, pipeline_Richard
@@ -236,22 +236,6 @@ def get_top_genes(data_frame: pd.DataFrame, thresshold: int = 5) -> np.ndarray:
     return frequent_mutations
 
 
-def transpose(series: pd.Series, columns=None) -> pd.DataFrame:
-    """
-    Transpose level 1 values (gene, or pathway/network) of series into dataframe.
-    """
-    patient_ids = series.index.get_level_values("Patient ID")
-    if columns is None:
-        columns = sorted(np.unique(series.index.get_level_values(1)))
-    transposed_sheet = pd.DataFrame(
-        0.0, index=np.unique(patient_ids), columns=sorted(columns)
-    )
-    for ptid, column in series.index:
-        transposed_sheet.loc[ptid, column] = series.loc[ptid, column]
-
-    return transposed_sheet
-
-
 def split_time_and_transform(
     data_frame: pd.DataFrame,
     column_pair: list,
@@ -336,6 +320,8 @@ def load_process_and_store_spreadsheets(
 
         sheets = {
             "t0": t0_sheet,
+            "t0_indicator": t0_sheet,
+            "t1_indicator": t1_sheet,
             "t1": t1_sheet,
             transformation.__name__: transf_sheet,
         }
@@ -366,7 +352,7 @@ def load_process_and_store_spreadsheets(
                 "chromosome": chromosome_sheet,
                 "varianttype": vartype_sheet,
             }.items():
-                coarse_sheet = add_mutationless_patients(coarse_sheet, clinical_data)
+                coarse_sheet = add_clearance_patients(coarse_sheet, clinical_data)
                 # Merge with clinical data.
                 final_spreadsheet = merge_mutations_with_phenotype_data(
                     coarse_sheet, clinical_data
@@ -429,7 +415,7 @@ def load_process_and_store_spreadsheets(
                 )
 
 
-def annotate_genes(data_frame, annotation_filename):
+def annotate_genes(data_frame: pd.DataFrame, annotation_filename: str):
     """
     Use spreadsheet with gene annotations (e.g., pathway or network).
     """
@@ -498,7 +484,7 @@ def clean_and_verify_data_frame(
 def merge_mutations_with_phenotype_data(
     transposed_mutation_data_frame: pd.DataFrame, phenotype_data_frame: pd.DataFrame
 ) -> pd.DataFrame:
-    phenotypes_to_keep = clinical_features + phenotype_labels
+    phenotypes_to_keep = clinical_features + outcome_labels
     # Combine mutation data and phenotype data.
     X = pd.merge(
         left=transposed_mutation_data_frame,

@@ -4,22 +4,12 @@ from typing import Literal, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from const import outcome_labels
 from models import get_categorical_columns
 from fragment_count.utils import load_samples_as_frame
 
 RANDOM_STATE = 1234
 np.random.seed(RANDOM_STATE)
-
-
-# Phenotype labels that we wish to predict.
-phenotype_labels = [
-    "Clinical_Response",
-    "response_grouped",
-    "OS_months",
-    "PFS_months",
-    "Censor_OS",
-    "Censor_progression",
-]
 
 
 def categorical_columns_to_lower(data_frame: pd.DataFrame) -> pd.DataFrame:
@@ -78,8 +68,8 @@ def load_avenio_files(
     return (mutation_data_frame, categorical_columns_to_lower(phenotypes))
 
 
-def add_mutationless_patients(
-    mutation_table: pd.DataFrame, clinical_sheet: np.ndarray
+def add_clearance_patients(
+    mutation_table: pd.DataFrame, clinical_sheet: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Add mutationless patients to the mutation table by filling the rows with zeros.
@@ -111,8 +101,8 @@ def read_preprocessed_data(filename: str, split_label=True) -> Tuple[pd.DataFram
     X.set_index(X.columns[0], drop=True, inplace=True)
     X.index.name = "Patient ID"
     if split_label:
-        y = X[phenotype_labels].copy()
-        X.drop(phenotype_labels, axis=1, inplace=True)
+        y = X[outcome_labels].copy()
+        X.drop(outcome_labels, axis=1, inplace=True)
         return (X, y)
 
     return (X,)

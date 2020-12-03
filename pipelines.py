@@ -18,7 +18,7 @@ import numpy as np
 from numpy import mean, std
 
 from const import categorical_phenotypes as categorical_input_columns
-from const import clinical_features, tmb_features
+from const import clinical_features, meta_columns, tmb_features
 from models import (
     get_hyper_param_grid,
     AutoMaxScaler,
@@ -113,14 +113,6 @@ phenotypes_to_drop = [
     # "therapyline",
     # "lungmeta",
     # "skeletonmeta",
-]
-meta_columns = [
-    "lymfmeta",
-    "brainmeta",
-    "adrenalmeta",
-    "livermeta",
-    "lungmeta",
-    "skeletonmeta",
 ]
 
 
