@@ -182,8 +182,8 @@ def clinical_data_curation(X: pd.DataFrame) -> pd.DataFrame:
 
     X_prime["clearance"] = X_prime["T0_T1"].map(
         {
-            "only tumor derived mutation at t0": "t1",
-            "only tumor derived mutation at t1": "t0",
+            "only tumor derived mutation at T0": "t1",
+            "only tumor derived mutation at T1": "t0",
             "patient had tumor derived mutations at both timepoints": "no",
             "no tumor derived mutations at t0 and t1": "t0+t1",
         }

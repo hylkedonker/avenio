@@ -31,7 +31,7 @@ def transform_genomic(data: pd.DataFrame, granularity: str) -> dict:
         observed_groups = observed_mutations.groupby(["Patient ID", granularity])
         # Aggregate individual variants.
         processed_sheets[time_name] = _transpose(observed_groups.sum())
-        processed_sheets[time_name + "_TMB"] = _transpose(
+        processed_sheets[time_name + "_tmb"] = _transpose(
             observed_groups.count()
         ).astype(int)
 
@@ -72,15 +72,15 @@ def transform_clinic(data: pd.DataFrame) -> pd.DataFrame:
     # Remove original column.
     X.drop(columns="Age", inplace=True)
 
-    X["PD_L1>50%"] = np.nan
+    X["pd_l1>50%"] = np.nan
     not_null = X["PD_L1_continous"].notnull()
-    X.loc[not_null, "PD_L1>50%"] = (X.loc[not_null, "PD_L1_continous"] > 50).astype(int)
+    X.loc[not_null, "pd_l1>50%"] = (X.loc[not_null, "PD_L1_continous"] > 50).astype(int)
     X.drop(columns="PD_L1_continous", inplace=True)
 
     X["clearance"] = X["T0_T1"].map(
         {
-            "only tumor derived mutation at t0": "t1",
-            "only tumor derived mutation at t1": "t0",
+            "only tumor derived mutation at T0": "t1",
+            "only tumor derived mutation at T1": "t0",
             "patient had tumor derived mutations at both timepoints": "no",
             "no tumor derived mutations at t0 and t1": "t0+t1",
         }
@@ -90,7 +90,7 @@ def transform_clinic(data: pd.DataFrame) -> pd.DataFrame:
     new_clinical_features = clinical_features.copy()
     new_clinical_features[new_clinical_features.index("T0_T1")] = "clearance"
     new_clinical_features[new_clinical_features.index("Age")] = "age"
-    new_clinical_features[new_clinical_features.index("PD_L1_continous")] = "PD_L1>50%"
+    new_clinical_features[new_clinical_features.index("PD_L1_continous")] = "pd_l1>50%"
     # All clinical variables are categories.
     X[new_clinical_features] = X[new_clinical_features].astype("category")
     return X
