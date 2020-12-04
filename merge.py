@@ -126,10 +126,12 @@ def _encode_as_numeric(X):
     genetic_columns = sorted(genetic_columns)
 
     genetic_direction = sorted(x for x in genetic_columns if "cna_at_t" not in x)
+    genetic_presence = sorted(set(genetic_columns) - set(genetic_direction))
     gene_up = [x + "↑" for x in genetic_direction]
     gene_down = [x + "↓" for x in genetic_direction]
     X_prime[gene_up] = X[genetic_direction].applymap(lambda x: 1 if x > 0 else 0)
     X_prime[gene_down] = X[genetic_direction].applymap(lambda x: 1 if x < 0 else 0)
+    X_prime[genetic_presence] = X[genetic_presence]
 
     X_prime[clearance_columns] = clearance_dummies[clearance_columns]
     X_prime["pd_l1>50%"] = X["pd_l1>50%"]
