@@ -5,7 +5,12 @@ from typing import Callable, Optional
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import GridSearchCV, KFold, StratifiedKFold
+from sklearn.model_selection import (
+    train_test_split,
+    GridSearchCV,
+    KFold,
+    StratifiedKFold,
+)
 from sklearn.pipeline import Pipeline
 
 from models import get_hyper_param_grid
@@ -134,3 +139,22 @@ def get_sub_pipeline(pipeline, step: int):
     Get part of the pipeline upto and including `step`.
     """
     return Pipeline(pipeline.steps[:step])
+
+
+def data_frame_to_disk(
+    X: pd.DataFrame,
+    all_filename: str,
+    train_filename: str,
+    test_filename: str,
+    random_state: int = 1234,
+):
+    """
+    Write data to disk.
+    """
+    f_test = 0.2
+    X.sort_index(inplace=True)
+    X_train, X_test = train_test_split(X, test_size=f_test, random_state=random_state)
+    X.to_csv(all_filename + ".tsv", sep="\t")
+    X.to_excel(all_filename + ".xlsx")
+    X_train.to_csv(train_filename + ".tsv", sep="\t")
+    X_test.to_csv(test_filename + ".tsv", sep="\t")
