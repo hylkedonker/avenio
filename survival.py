@@ -47,6 +47,7 @@ harmonium = SurvivalHarmonium(
     metrics=tuple(),
     CD_steps=1,
     n_hidden_units=1,
+    guess_weights=False,
 )
 harm_hyperparams = {
     "learning_rate": loguniform(1e-7, 0.005),
@@ -55,7 +56,6 @@ harm_hyperparams = {
     "mini_batch_size": loguniform(25, 1000),
     "weight_decay": loguniform(1e-5, 0.1),
     "persistent": [True, False],
-    "guess_weights": [True, False],
 }
 
 s = double_cross_validate(

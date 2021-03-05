@@ -1,3 +1,3 @@
-DOCKER_BUILD=docker build
+BUILD=docker build
 all:
-	$(DOCKER_BUILD) -f Dockerfile -t local/avenio .
+	$(BUILD) -f Dockerfile -t local/avenio .
