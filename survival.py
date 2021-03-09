@@ -34,7 +34,7 @@ def conditional_concordance_score(estimator, X, y=None):
     return estimator.concordance_index(X, conditional_probability=True)
 
 
-time_horizon = X[survival_columns].max(axis=0).values
+time_horizon = X[survival_columns].max(axis=0).values * 2
 harmonium = SurvivalHarmonium(
     categorical_columns=categorical_columns,
     survival_columns=survival_columns,
@@ -51,7 +51,7 @@ harmonium = SurvivalHarmonium(
 )
 harm_hyperparams = {
     "learning_rate": loguniform(1e-7, 0.005),
-    "n_epochs": loguniform(1e1, 1e5),
+    "n_epochs": loguniform(500, 1e5),
     "momentum_fraction": uniform(0, 1.0),
     "mini_batch_size": loguniform(25, 1000),
     "weight_decay": loguniform(1e-5, 0.1),
