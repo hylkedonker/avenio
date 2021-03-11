@@ -3,6 +3,7 @@ import pickle
 
 from harmoniums import SurvivalHarmonium
 from harmoniums.utils import double_cross_validate
+import pandas as pd
 from scipy.stats import uniform
 from sklearn.utils.fixes import loguniform
 
@@ -32,6 +33,12 @@ def conditional_concordance_score(estimator, X, y=None):
     if not isinstance(estimator, SurvivalHarmonium):
         estimator = estimator.best_estimator_
     return estimator.concordance_index(X, conditional_probability=True)
+
+
+def likelihood(estimator, X, y=None):
+    if not isinstance(estimator, SurvivalHarmonium):
+        estimator = estimator.best_estimator_
+    return estimator.log_likelihood(X).mean()
 
 
 time_horizon = X[survival_columns].max(axis=0).values * 2
@@ -68,8 +75,9 @@ s = double_cross_validate(
     scoring={
         "conditional_concordance": conditional_concordance_score,
         "concordance": concordance_score,
+        "likelihood": likelihood,
     },
-    refit="conditional_concordance",
+    refit="likelihood",
     n_iter=25,
     n_jobs=-1,
     random_state=random_state,
@@ -88,8 +96,18 @@ for fold_number, est in enumerate(s["estimator"]):
     print("Best score:", score)
     print("==" * 10)
 
+# Collect all test results.
+results = {}
+for key in s.keys():
+    if key.startswith("test_"):
+        metric_name = key[len("test_") :]
+        results[metric_name] = s[key].mean()
+        results[f"{metric_name}_std"] = s[key].std()
+scores = pd.Series(results)
+
 data = {
     "folds": estimator_fold,
+    "scores": scores,
 }
 with open(pickle_location, mode="wb") as f:
     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)

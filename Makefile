@@ -5,8 +5,7 @@ TMP_DIR=${HOME}/tmp
 BRANCH_NAME=$(shell git branch | grep '*' | cut -d' ' -f2 | sed -E 's/feature\///')
 DOCKER_IMAGE=avenio_${BRANCH_NAME}.tar
 
-all:
-	singularity
+all: singularity
 
 docker:
 	$(BUILD) -f Dockerfile -t avenio/${BRANCH_NAME} .
@@ -20,4 +19,4 @@ singularity: docker
 		singularity build \
 		--force \
 		--sandbox ${CLUSTER_DIR}/${BRANCH_NAME} \
-		docker-archive://${CLUSTER_DIR}/${DOCKER_IMAGE}"	
+		docker-archive://${CLUSTER_DIR}/${DOCKER_IMAGE}"
