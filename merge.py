@@ -85,12 +85,16 @@ def _encode_as_numeric(X):
     """
     Turn categorical covariates into dummies.
     """
-    phenotypes_to_drop = [
-        "Systemischetherapie",
-        "stage",
-    ]
-
-    X = X.drop(columns=phenotypes_to_drop)
+    X["therapy"] = (
+        X.pop("Systemischetherapie")
+        .str.lower()
+        .replace(
+            {
+                "nivolumab + ipilimumab": "nivolumab+ipilimumab",
+                "ipi-novu": "nivolumab+ipilimumab",
+            }
+        )
+    )
     clearance_dummies = pd.get_dummies(X[["clearance"]])
     # Drop first column (no clearance).
     clearance_columns = ["clearance_t0", "clearance_t0+t1", "clearance_t1"]
@@ -104,7 +108,10 @@ def _encode_as_numeric(X):
         "gender",
         "therapyline",
         "smokingstatus",
-        "histology_grouped",
+        "histology",
+        "stage",
+        "therapy",
+        "ECOG_PS",
         "lymfmeta",
         "brainmeta",
         "adrenalmeta",
@@ -112,13 +119,17 @@ def _encode_as_numeric(X):
         "lungmeta",
         "skeletonmeta",
     ]
-    X_prime = pd.get_dummies(
-        X[categories_to_encode].apply(lambda x: x.str.lower()), drop_first=True
-    )
+
+    def to_lower(column):
+        """ Make text columns lowercase. """
+        if hasattr(column, "str"):
+            return column.str.lower()
+        return column
+
+    X_prime = pd.get_dummies(X[categories_to_encode].apply(to_lower), drop_first=True)
 
     genetic_columns = (
         set(X.columns)
-        - set(phenotypes_to_drop)
         - set(categories_to_encode)
         - set(black_list)
         - set(outcome_labels)

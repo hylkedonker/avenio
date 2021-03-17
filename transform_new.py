@@ -47,7 +47,7 @@ def transform_clinic(data: pd.DataFrame) -> pd.DataFrame:
     X = data.copy()
 
     # After inspection the other histologies are partially adeno.
-    X["histology_grouped"].replace({"other": "adeno"}, inplace=True)
+    X["histology"] = X.pop("histology_grouped").replace({"other": "adeno"})
     first_line_therapy = X["therapyline"].isin([0, 1])
 
     # According to the selection criterea of the study, 0th and 1st line should be
@@ -77,6 +77,9 @@ def transform_clinic(data: pd.DataFrame) -> pd.DataFrame:
     X.loc[not_null, "pd_l1>50%"] = (X.loc[not_null, "PD_L1_continous"] > 50).astype(int)
     X.drop(columns="PD_L1_continous", inplace=True)
 
+    X["ECOG_PS"] = X["ECOG_PS"].astype(int).astype("category")
+    X["stage"] = X["stage"].replace({3: "III", 4: "IV"})
+
     X["clearance"] = X["T0_T1"].map(
         {
             "only tumor derived mutation at T0": "t1",
@@ -88,6 +91,9 @@ def transform_clinic(data: pd.DataFrame) -> pd.DataFrame:
     X.drop(columns="T0_T1", inplace=True)
 
     new_clinical_features = clinical_features.copy()
+    new_clinical_features[
+        new_clinical_features.index("histology_grouped")
+    ] = "histology"
     new_clinical_features[new_clinical_features.index("T0_T1")] = "clearance"
     new_clinical_features[new_clinical_features.index("Age")] = "age"
     new_clinical_features[new_clinical_features.index("PD_L1_continous")] = "pd_l1>50%"

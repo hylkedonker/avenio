@@ -287,6 +287,7 @@ clinical_features = [
     "adrenalmeta",
     "livermeta",
     "lungmeta",
+    "ECOG_PS",
     "skeletonmeta",
     "PD_L1_continous",
     "T0_T1",
