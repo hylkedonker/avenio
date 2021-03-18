@@ -3,7 +3,7 @@ import pandas as pd
 
 from const import clinical_features, outcome_labels
 from extract import extract_avenio_mutations, extract_clinical_sheet
-from transform_new import transform_clinic, transform_genomic
+from transform import transform_clinic, transform_genomic
 
 
 def build_clinical_genomic_sheet(granularity="chromosome") -> pd.DataFrame:
